@@ -227,10 +227,12 @@ func sendDatum(msg interface{}) {
 	var dt int
 
 	switch msg.(type) {
-	case dCommand:
+	case *dCommand:
 		dt = dtCommand
-	case dMessage:
+	case *dMessage:
 		dt = dtMessage
+	default:
+		log.Panicf("Tried to send unknown datum type: %v %t", msg, msg)
 	}
 
 	packet := make([]byte, 0, len(datum)+3)
