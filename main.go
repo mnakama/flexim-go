@@ -429,15 +429,38 @@ func main() {
 	fmt.Println(config)
 
 	peerNick = defaultPeerNick
-	sock, err = net.Dial("tcp", os.Args[1])
-	if err != nil {
-		log.Fatal(err)
-	}
 
-	if modeSend == modeMsgpack {
-		sock.Write([]byte("\xa4FLEX"))
+	if os.Args[1] == "--fd" {
+		fd := os.NewFile(3, "")
+		if fd == nil {
+			log.Fatal("Invalid file descriptor")
+		}
+
+		sock, err = net.FileConn(fd)
+		if err != nil {
+			log.Panic(err)
+		}
+
+		switch os.Args[2] {
+		case "text":
+			modeSend = modeText
+			modeRecv = modeText
+		case "msgpack":
+			modeSend = modeMsgpack
+			modeRecv = modeMsgpack
+		}
+
 	} else {
-		sock.Write([]byte("\x00FLEX"))
+		sock, err = net.Dial("tcp", os.Args[1])
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		if modeSend == modeMsgpack {
+			sock.Write([]byte("\xa4FLEX"))
+		} else {
+			sock.Write([]byte("\x00FLEX"))
+		}
 	}
 
 	chatWindow()
