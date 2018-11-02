@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"fmt"
 	"net"
 	"os"
 )
@@ -52,6 +53,8 @@ func handoverConn(conn *net.TCPConn) {
 	pattr := os.ProcAttr{
 		Files: []*os.File{nil, os.Stdout, os.Stderr, file},
 	}
+
+	fmt.Println("init mode:", proto)
 
 	proc, err := os.StartProcess("/home/matt/projects/flexim-go/flexim-chat", []string{"flexim-go", "--fd", "3", "--mode", proto}, &pattr)
 	if err != nil {
