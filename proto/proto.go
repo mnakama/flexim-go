@@ -31,7 +31,7 @@ const (
 // Datum structures
 type Command struct {
 	Cmd     string `msgpack:"cmd"`
-	Payload string `msgpack:"payload"`
+	Payload []string `msgpack:"payload"`
 }
 
 type Message struct {
@@ -62,6 +62,11 @@ func Dial(protocol string, addr string, mode int) (*Socket, error) {
 
 	fmt.Printf("Dial in mode: %d, %d\n", s.modeRecv, s.modeSend)
 	return &s, nil
+}
+
+func FromConn(sock net.Conn, mode int) *Socket {
+	s := Socket{sock, mode, mode, nil, nil, nil}
+	return &s
 }
 
 func FromFD(fd int, mode int) (*Socket, error) {
@@ -142,10 +147,15 @@ func (s *Socket) SendHeader() error {
 func (s *Socket) SendCommand(cmd *Command) error {
 	switch s.modeSend {
 	case ModeText:
-		c := make([]byte, 0, 1+len(cmd.Cmd)+len(cmd.Payload))
+		var payloadStr string
+		if len(cmd.Payload) > 0 {
+			payloadStr = cmd.Payload[0]
+		}
+
+		c := make([]byte, 0, 1+len(cmd.Cmd)+len(payloadStr))
 		c = append(c, 0)
 		c = append(c, []byte(cmd.Cmd)...)
-		c = append(c, []byte(cmd.Payload)...)
+		c = append(c, []byte(payloadStr)...)
 		_, err := s.Write(c)
 		return err
 	default:
@@ -177,7 +187,7 @@ func (s *Socket) SetSendMode(mode int) {
 
 	cmd := Command{
 		Cmd:     ctext,
-		Payload: "",
+		Payload: []string{},
 	}
 	s.SendCommand(&cmd)
 
@@ -271,7 +281,7 @@ func (s *Socket) readSocket() {
 				if len(packet) >= 5 {
 					cmd := Command{
 						Cmd:     string(packet[1:5]),
-						Payload: string(packet[5:]),
+						Payload: []string{string(packet[5:])},
 					}
 
 					s.processCommand(&cmd)
