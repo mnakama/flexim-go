@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"github.com/gotk3/gotk3/glib"
 	"github.com/gotk3/gotk3/gtk"
@@ -59,6 +60,7 @@ var (
 	sock          net.Conn
 	sentFirstLine bool
 	peerNick      string
+	peerName    = flag.String("to", "", "Name of chat partner")
 	modeSend    = modeMsgpack
 	modeRecv    = modeMsgpack
 
@@ -347,7 +349,7 @@ func sendEntry() {
 		entry.SetText("")
 
 		msg := dMessage{
-			To:    "",
+			To:    *peerName,
 			From:  config.Nickname,
 			Flags: []string{},
 			Date:  time.Now().Unix(),
@@ -412,9 +414,10 @@ func chatWindow() {
 }
 
 func main() {
-	if len(os.Args) < 2 {
-		log.Fatalln("Missing argument: host:port")
-	}
+	socketFd := flag.Int("fd", -1, "file descriptor of established socket")
+	modeFlag := flag.String("mode", "msgpack", "protocol mode ('text' or 'msgpack')")
+
+	flag.Parse()
 
 	yconfig, err := ioutil.ReadFile("/home/matt/test.yaml")
 	if err != nil {
@@ -430,8 +433,20 @@ func main() {
 
 	peerNick = defaultPeerNick
 
-	if os.Args[1] == "--fd" {
-		fd := os.NewFile(3, "")
+	switch *modeFlag {
+	case "text":
+		modeSend = modeText
+		modeRecv = modeText
+	case "msgpack":
+		modeSend = modeMsgpack
+		modeRecv = modeMsgpack
+	default:
+		fmt.Println("Invalid protocol mode:", *modeFlag)
+		os.Exit(1)
+	}
+
+	if *socketFd >= 0 {
+		fd := os.NewFile(uintptr(*socketFd), "")
 		if fd == nil {
 			log.Fatal("Invalid file descriptor")
 		}
@@ -440,18 +455,10 @@ func main() {
 		if err != nil {
 			log.Panic(err)
 		}
-
-		switch os.Args[2] {
-		case "text":
-			modeSend = modeText
-			modeRecv = modeText
-		case "msgpack":
-			modeSend = modeMsgpack
-			modeRecv = modeMsgpack
-		}
-
 	} else {
-		sock, err = net.Dial("tcp", os.Args[1])
+		dest := flag.Arg(0)
+		fmt.Println(dest)
+		sock, err = net.Dial("tcp", dest)
 		if err != nil {
 			log.Fatal(err)
 		}
