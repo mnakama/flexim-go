@@ -53,7 +53,7 @@ func handoverConn(conn *net.TCPConn) {
 		Files: []*os.File{nil, os.Stdout, os.Stderr, file},
 	}
 
-	proc, err := os.StartProcess("/home/matt/projects/flexim-go/flexim-go", []string{"flexim-go", "--fd", proto}, &pattr)
+	proc, err := os.StartProcess("/home/matt/projects/flexim-go/flexim-chat", []string{"flexim-go", "--fd", proto}, &pattr)
 	if err != nil {
 		log.Print(err)
 		return
