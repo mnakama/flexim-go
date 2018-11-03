@@ -1,14 +1,14 @@
 package main
 
 import (
-	"log"
 	"fmt"
+	"log"
 	"net"
 	"os"
 )
 
 const (
-	modeText = "text"
+	modeText    = "text"
 	modeMsgpack = "msgpack"
 )
 
@@ -66,7 +66,7 @@ func handoverConn(conn *net.TCPConn) {
 }
 
 func main() {
-	addr,err := net.ResolveTCPAddr("tcp", ":9001")
+	addr, err := net.ResolveTCPAddr("tcp", ":9001")
 	if err != nil {
 		log.Fatal(err)
 	}

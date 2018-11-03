@@ -30,7 +30,7 @@ const (
 
 // Datum structures
 type Command struct {
-	Cmd     string `msgpack:"cmd"`
+	Cmd     string   `msgpack:"cmd"`
 	Payload []string `msgpack:"payload"`
 }
 
@@ -43,12 +43,13 @@ type Message struct {
 }
 
 type Socket struct {
-	conn       net.Conn
-	modeSend   int
-	modeRecv   int
-	cb_Message func(*Message)
-	cb_Command func(*Command)
-	cb_Text    func(string)
+	conn          net.Conn
+	modeSend      int
+	modeRecv      int
+	cb_Message    func(*Message)
+	cb_Command    func(*Command)
+	cb_Text       func(string)
+	cb_Disconnect func()
 }
 
 func Dial(protocol string, addr string, mode int) (*Socket, error) {
@@ -58,14 +59,14 @@ func Dial(protocol string, addr string, mode int) (*Socket, error) {
 		return nil, err
 	}
 
-	s := Socket{conn, mode, mode, nil, nil, nil}
+	s := Socket{conn, mode, mode, nil, nil, nil, nil}
 
 	fmt.Printf("Dial in mode: %d, %d\n", s.modeRecv, s.modeSend)
 	return &s, nil
 }
 
 func FromConn(sock net.Conn, mode int) *Socket {
-	s := Socket{sock, mode, mode, nil, nil, nil}
+	s := Socket{sock, mode, mode, nil, nil, nil, nil}
 	return &s
 }
 
@@ -80,7 +81,7 @@ func FromFD(fd int, mode int) (*Socket, error) {
 		return nil, err
 	}
 
-	s := Socket{sock, mode, mode, nil, nil, nil}
+	s := Socket{sock, mode, mode, nil, nil, nil, nil}
 	fmt.Printf("FromFD in mode: %d, %d\n", s.modeRecv, s.modeSend)
 
 	return &s, nil
@@ -94,14 +95,16 @@ func (s *Socket) Write(buffer []byte) (int, error) {
 	return s.conn.Write(buffer)
 }
 
-func (s *Socket) SetCallbacks(message func(*Message), command func(*Command), txt func(string)) {
+func (s *Socket) SetCallbacks(message func(*Message), command func(*Command), txt func(string), disconnect func()) {
 	s.cb_Message = message
 	s.cb_Command = command
 	s.cb_Text = txt
+	s.cb_Disconnect = disconnect
 	go s.readSocket()
 }
 
 func (s *Socket) Close() error {
+	s.cb_Disconnect()
 	return s.conn.Close()
 }
 
@@ -198,7 +201,6 @@ func (s *Socket) processCommand(cmd *Command) {
 	switch cmd.Cmd {
 	case "BYE ":
 		s.Close()
-		s.conn = nil
 
 		s.cb_Text("Disconnected: BYE")
 	case "TEXT":
@@ -218,9 +220,9 @@ func (s *Socket) readSocket() {
 		if err != nil {
 			if err == io.EOF {
 				msg := "Disconnected"
+				s.Close()
 				s.cb_Text(msg)
 
-				s.Close()
 				return
 			}
 

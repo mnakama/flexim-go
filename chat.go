@@ -58,6 +58,10 @@ func cb_Text(txt string) {
 	})
 }
 
+func cb_Disconnect() {
+	// TODO: disable message sending
+}
+
 func cb_Command(cmd *proto.Command) {
 	switch cmd.Cmd {
 	case "NICK":
@@ -230,6 +234,7 @@ func chatWindow() {
 func main() {
 	socketFd := flag.Int("fd", -1, "file descriptor of established socket")
 	modeFlag := flag.String("mode", "msgpack", "protocol mode ('text' or 'msgpack')")
+	myNick := flag.String("user", "", "Your username")
 
 	flag.Parse()
 
@@ -244,6 +249,10 @@ func main() {
 	}
 
 	fmt.Println(config)
+
+	if *myNick != "" {
+		config.Nickname = *myNick
+	}
 
 	peerNick = defaultPeerNick
 
@@ -279,7 +288,7 @@ func main() {
 
 	chatWindow()
 
-	sock.SetCallbacks(cb_Message, cb_Command, cb_Text)
+	sock.SetCallbacks(cb_Message, cb_Command, cb_Text, cb_Disconnect)
 
 	gtk.Main()
 }
