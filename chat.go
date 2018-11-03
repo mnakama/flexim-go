@@ -61,9 +61,9 @@ func cb_Text(txt string) {
 func cb_Command(cmd *proto.Command) {
 	switch cmd.Cmd {
 	case "NICK":
-		if cmd.Payload != "" {
+		if cmd.Payload != nil {
 			oldNick := peerNick
-			peerNick = cmd.Payload
+			peerNick = cmd.Payload[0]
 			glib.IdleAdd(func() bool {
 				appendText(fmt.Sprintf("%s is now known as %s", oldNick, cmd.Payload))
 				return false
@@ -73,7 +73,7 @@ func cb_Command(cmd *proto.Command) {
 		}
 	default:
 		glib.IdleAdd(func() bool {
-			appendMsg(time.Now(), peerNick, cmd.Cmd+" "+cmd.Payload)
+			appendMsg(time.Now(), peerNick, cmd.Cmd)
 			return false
 		})
 	}
@@ -132,7 +132,7 @@ func sendEntry() {
 		}
 
 		if len(c) > 1 {
-			cmd.Payload = c[1]
+			cmd.Payload = []string{c[1]}
 		}
 
 		switch cmd.Cmd {
