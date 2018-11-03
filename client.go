@@ -15,6 +15,7 @@ import (
 	"net"
 	"os"
 	"syscall"
+	"time"
 )
 
 // User config variables
@@ -30,14 +31,17 @@ var (
 	username      = flag.String("user", "", "login name")
 	tcplisten     = flag.String("tcplisten", "", "bind address for TCP clients")
 	unixlisten    = flag.String("listen", "", "bind address for local clients")
+
+	// X.org crashes at about 50+ visible windows with dwm
+	chatLimit = flag.Int("chatlimit", 30, "flood protection: maximum amount of open chats")
 )
 
-func login() {
+func login() error {
 	var err error
 
 	server, err = proto.Dial("tcp", *serverAddress, proto.ModeMsgpack)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 
 	err = server.SendHeader()
@@ -65,7 +69,7 @@ func login() {
 		fmt.Println(txt)
 	}, func() { // disconnect
 		fmt.Println("Disconnected from server")
-		os.Exit(0)
+		go reconnect()
 	})
 
 	auth := proto.Command{
@@ -73,9 +77,28 @@ func login() {
 		Payload: []string{*username},
 	}
 	server.SendCommand(&auth)
+
+	return nil
+}
+
+func reconnect() {
+	for {
+		time.Sleep(time.Second)
+		err := login()
+		if err != nil {
+			log.Println(err)
+		} else {
+			return
+		}
+	}
 }
 
 func newChatIn(msg *proto.Message) {
+	if len(clientMap) >= *chatLimit {
+		fmt.Printf("Too many open chats! (%d)\nMessage: %v\n\n", len(clientMap), *msg)
+		return
+	}
+
 	partner := msg.From
 	fd, err := syscall.Socketpair(syscall.AF_UNIX, syscall.SOCK_STREAM, 0)
 	if err != nil {
