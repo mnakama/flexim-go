@@ -28,6 +28,7 @@ var (
 	sentFirstLine bool
 	peerNick      string
 	peerName      = flag.String("to", "", "Name of chat partner")
+	unixAddress   = flag.String("unix", "", "Unix socket address to connect")
 
 	chat       *gtk.TextView
 	chatBuffer *gtk.TextBuffer
@@ -269,6 +270,17 @@ func main() {
 
 	if *socketFd >= 0 {
 		sock, err = proto.FromFD(*socketFd, mode)
+		if err != nil {
+			log.Panic(err)
+		}
+	} else if *unixAddress != "" {
+		fmt.Println("Connecting to:", *unixAddress)
+		sock, err = proto.Dial("unix", *unixAddress, mode)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		err := sock.SendHeader()
 		if err != nil {
 			log.Panic(err)
 		}
