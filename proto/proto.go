@@ -26,6 +26,7 @@ const (
 	DMessage      = 3
 	DRoster       = 4
 	DUser         = 5
+	DStatus       = 6
 )
 
 // Datum structures
@@ -42,6 +43,11 @@ type Message struct {
 	Msg   string   `msgpack:"msg"`
 }
 
+type Status struct {
+	Status  int8   `msgpack:"status"`
+	Payload string `msgpack:"payload"`
+}
+
 type Socket struct {
 	conn          net.Conn
 	modeSend      int
@@ -50,6 +56,11 @@ type Socket struct {
 	cb_Command    func(*Command)
 	cb_Text       func(string)
 	cb_Disconnect func()
+	cb_Status     func(*Status)
+}
+
+func newSocket(conn net.Conn, mode int) Socket {
+	return Socket{conn, mode, mode, nil, nil, nil, nil, nil}
 }
 
 func Dial(protocol string, addr string, mode int) (*Socket, error) {
@@ -59,14 +70,14 @@ func Dial(protocol string, addr string, mode int) (*Socket, error) {
 		return nil, err
 	}
 
-	s := Socket{conn, mode, mode, nil, nil, nil, nil}
+	s := newSocket(conn, mode)
 
 	fmt.Printf("Dial in mode: %d, %d\n", s.modeRecv, s.modeSend)
 	return &s, nil
 }
 
 func FromConn(sock net.Conn, mode int) *Socket {
-	s := Socket{sock, mode, mode, nil, nil, nil, nil}
+	s := newSocket(sock, mode)
 	return &s
 }
 
@@ -81,7 +92,7 @@ func FromFD(fd int, mode int) (*Socket, error) {
 		return nil, err
 	}
 
-	s := Socket{sock, mode, mode, nil, nil, nil, nil}
+	s := newSocket(sock, mode)
 	fmt.Printf("FromFD in mode: %d, %d\n", s.modeRecv, s.modeSend)
 
 	return &s, nil
@@ -95,11 +106,12 @@ func (s *Socket) Write(buffer []byte) (int, error) {
 	return s.conn.Write(buffer)
 }
 
-func (s *Socket) SetCallbacks(message func(*Message), command func(*Command), txt func(string), disconnect func()) {
+func (s *Socket) SetCallbacks(message func(*Message), command func(*Command), txt func(string), disconnect func(), status func(*Status)) {
 	s.cb_Message = message
 	s.cb_Command = command
 	s.cb_Text = txt
 	s.cb_Disconnect = disconnect
+	s.cb_Status = status
 	go s.readSocket()
 }
 
@@ -273,6 +285,16 @@ func (s *Socket) readSocket() {
 				}
 
 				s.cb_Message(&msg)
+
+			case DStatus:
+				var status Status
+				err = msgpack.Unmarshal(datum, &status)
+				if err != nil {
+					log.Panic(err)
+				}
+
+				s.cb_Status(&status)
+
 			default:
 				s.cb_Text(fmt.Sprintf("Unrecognized datum type: %v", dt))
 			}

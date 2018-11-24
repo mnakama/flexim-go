@@ -63,6 +63,16 @@ func cb_Disconnect() {
 	// TODO: disable message sending
 }
 
+func cb_Status(status *proto.Status) {
+	txt := fmt.Sprintf("%d: %s", status.Status, status.Payload)
+	fmt.Println(txt)
+
+	glib.IdleAdd(func() bool {
+		appendText(txt)
+		return false
+	})
+}
+
 func cb_Command(cmd *proto.Command) {
 	switch cmd.Cmd {
 	case "NICK":
@@ -300,7 +310,7 @@ func main() {
 
 	chatWindow()
 
-	sock.SetCallbacks(cb_Message, cb_Command, cb_Text, cb_Disconnect)
+	sock.SetCallbacks(cb_Message, cb_Command, cb_Text, cb_Disconnect, cb_Status)
 
 	gtk.Main()
 }

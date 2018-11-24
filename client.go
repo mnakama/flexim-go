@@ -14,6 +14,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"os/signal"
 	"syscall"
 	"time"
 )
@@ -70,6 +71,11 @@ func login() error {
 	}, func() { // disconnect
 		fmt.Println("Disconnected from server")
 		go reconnect()
+	}, func(status *proto.Status) { // status
+		fmt.Println(status)
+		if status.Status < 0 {
+			quit(1)
+		}
 	})
 
 	auth := proto.Command{
@@ -149,6 +155,9 @@ func newChatIn(msg *proto.Message) {
 	}, func() { // disconnect
 		fmt.Println("Chat window disconnected")
 		delete(clientMap, partner)
+
+	}, func(status *proto.Status) { // status
+		fmt.Println(status)
 	})
 }
 
@@ -174,6 +183,9 @@ func newChatOut(conn net.Conn) {
 		if to != "" {
 			delete(clientMap, to)
 		}
+
+	}, func(status *proto.Status) { // status
+		fmt.Println(status)
 	})
 }
 
@@ -186,6 +198,29 @@ func listenLoop(ln net.Listener) {
 
 		newChatOut(conn)
 	}
+}
+
+// Catch interrupt signal
+func waitSignal() {
+	c := make(chan os.Signal)
+
+	signal.Notify(c, os.Interrupt)
+	s := <-c
+	log.Println("Received signal:", s)
+
+	quit(0)
+}
+
+// do cleanup
+func quit(ret int) {
+	fmt.Println("Closing down...")
+	os.Remove(*unixlisten)
+
+	for _, sock := range clientMap {
+		sock.Close()
+	}
+
+	os.Exit(ret)
 }
 
 func main() {
@@ -232,16 +267,10 @@ func main() {
 			fmt.Println("Panic:", r)
 		}
 
-		fmt.Println("Closing down...")
-		err = ln.Close()
-		if err != nil {
-			log.Panic(err)
-		}
-		err = os.Remove(*unixlisten)
-		if err != nil {
-			log.Panic(err)
-		}
+		quit(1)
 	}()
 
-	listenLoop(ln)
+	go listenLoop(ln)
+
+	waitSignal()
 }
