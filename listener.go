@@ -56,7 +56,7 @@ func handoverConn(conn *net.TCPConn) {
 
 	fmt.Println("init mode:", proto)
 
-	proc, err := os.StartProcess("/home/matt/projects/flexim-go/flexim-chat", []string{"flexim-go", "--fd", "3", "--mode", proto}, &pattr)
+	proc, err := os.StartProcess("flexim-chat", []string{"flexim-chat", "--fd", "3", "--mode", proto}, &pattr)
 	if err != nil {
 		log.Print(err)
 		return

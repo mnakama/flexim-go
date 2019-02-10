@@ -249,7 +249,7 @@ func main() {
 
 	flag.Parse()
 
-	yconfig, err := ioutil.ReadFile("/home/matt/test.yaml")
+	yconfig, err := ioutil.ReadFile(os.ExpandEnv("$HOME/test.yaml"))
 	if err != nil {
 		log.Print(err)
 	} else {

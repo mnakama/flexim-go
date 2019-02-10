@@ -132,7 +132,7 @@ func newChatIn(msg *proto.Message) {
 		Files: []*os.File{nil, os.Stdout, os.Stderr, clientFile},
 	}
 
-	proc, err := os.StartProcess("/home/matt/projects/flexim-go/flexim-chat", []string{"flexim-go", "--fd", "3", "--mode", "msgpack", "--to", partner, "--user", *username}, &pattr)
+	proc, err := os.StartProcess("flexim-chat", []string{"flexim-chat", "--fd", "3", "--mode", "msgpack", "--to", partner, "--user", *username}, &pattr)
 	if err != nil {
 		log.Print(err)
 		return
@@ -226,7 +226,7 @@ func quit(ret int) {
 func main() {
 	flag.Parse()
 
-	yconfig, err := ioutil.ReadFile("/home/matt/test.yaml")
+	yconfig, err := ioutil.ReadFile(os.ExpandEnv("$HOME/test.yaml"))
 	if err != nil {
 		log.Print(err)
 	} else {
