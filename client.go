@@ -80,6 +80,10 @@ func login() error {
 		if lastClient != nil {
 			lastClient.SendStatus(status)
 		}
+	}, func(roster *proto.Roster) { // roster
+		if lastClient != nil {
+			lastClient.SendRoster(roster)
+		}
 	})
 
 	auth := proto.Command{
@@ -101,6 +105,14 @@ func reconnect() {
 			return
 		}
 	}
+}
+
+func cb_Status(status *proto.Status) {
+	log.Println(status)
+}
+
+func cb_Roster(roster *proto.Roster) {
+	log.Println(roster)
 }
 
 func newChatIn(msg *proto.Message) {
@@ -172,9 +184,9 @@ func newChatIn(msg *proto.Message) {
 		log.Println("Chat window disconnected")
 		delete(clientMap, partner)
 
-	}, func(status *proto.Status) { // status
-		log.Println(status)
-	})
+	},
+		cb_Status, // status
+		cb_Roster) // roster
 }
 
 func newChatOut(conn net.Conn) {
@@ -207,9 +219,9 @@ func newChatOut(conn net.Conn) {
 			delete(clientMap, to)
 		}
 
-	}, func(status *proto.Status) { // status
-		log.Println(status)
-	})
+	},
+		cb_Status, // status
+		cb_Roster) // roster
 }
 
 func listenLoop(ln net.Listener) {

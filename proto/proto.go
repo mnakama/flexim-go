@@ -73,6 +73,7 @@ type Socket struct {
 	cb_Text       func(string)
 	cb_Disconnect func()
 	cb_Status     func(*Status)
+	cb_Roster     func(*Roster)
 }
 
 func printMsgpack(data []byte) {
@@ -86,12 +87,11 @@ func printMsgpack(data []byte) {
 	fmt.Printf("msgpack: %+v\n", unpacked)
 }
 
-func newSocket(conn net.Conn, mode int) Socket {
-	return Socket{conn, false, mode, mode, nil, nil, nil, nil, nil}
-}
-
 func Dial(protocol string, addr string, mode int) (*Socket, error) {
-	s := newSocket(nil, mode)
+	s := Socket{
+		modeSend: mode,
+		modeRecv: mode,
+	}
 
 	err := s.Dial(protocol, addr)
 	if err != nil {
@@ -116,7 +116,11 @@ func (s *Socket) Dial(protocol string, addr string) error {
 }
 
 func FromConn(sock net.Conn, mode int) *Socket {
-	s := newSocket(sock, mode)
+	s := Socket{
+		conn:     sock,
+		modeSend: mode,
+		modeRecv: mode,
+	}
 	return &s
 }
 
@@ -126,7 +130,10 @@ func (s *Socket) UseConn(sock net.Conn) {
 }
 
 func FromFD(fd int, mode int) (*Socket, error) {
-	s := newSocket(nil, mode)
+	s := Socket{
+		modeSend: mode,
+		modeRecv: mode,
+	}
 
 	err := s.UseFD(fd)
 	if err != nil {
@@ -164,12 +171,13 @@ func (s *Socket) Write(buffer []byte) (int, error) {
 	return s.conn.Write(buffer)
 }
 
-func (s *Socket) SetCallbacks(message func(*Message), command func(*Command), txt func(string), disconnect func(), status func(*Status)) {
+func (s *Socket) SetCallbacks(message func(*Message), command func(*Command), txt func(string), disconnect func(), status func(*Status), roster func(*Roster)) {
 	s.cb_Message = message
 	s.cb_Command = command
 	s.cb_Text = txt
 	s.cb_Disconnect = disconnect
 	s.cb_Status = status
+	s.cb_Roster = roster
 	go s.readSocket()
 }
 
@@ -204,14 +212,20 @@ func (s *Socket) sendDatum(msg interface{}) error {
 		dt = DMessage
 	case *Status:
 		dt = DStatus
+	case *Roster:
+		dt = DRoster
 	default:
 		log.Panicf("Tried to send unknown datum type: %v %t", msg, msg)
 	}
 
+	// make a packet to hold the header+msgpack
 	packet := make([]byte, 0, len(datum)+3)
+
+	// write type and size
 	packet = append(packet, byte(dt), byte(len(datum)>>8), byte(len(datum)&0xFF))
+
+	// write the msgpack data
 	packet = append(packet, datum...)
-	//fmt.Println(packet[0], packet[1:3], len(datum), string(packet))
 
 	_, err = s.conn.Write(packet)
 	if err != nil {
@@ -304,7 +318,7 @@ func (s *Socket) SendMessage(msg *Message) error {
 
 func (s *Socket) SendStatus(status *Status) error {
 	if s == nil || s.conn == nil {
-		return errors.New("Cannot send message to nil Socket")
+		return errors.New("Cannot send status to nil Socket")
 	}
 
 	if s.modeSend == ModeText {
@@ -312,6 +326,18 @@ func (s *Socket) SendStatus(status *Status) error {
 		return err
 	} else {
 		return s.sendDatum(status)
+	}
+}
+
+func (s *Socket) SendRoster(roster *Roster) error {
+	if s == nil || s.conn == nil {
+		return errors.New("Cannot send roster to nil Socket")
+	}
+
+	if s.modeSend == ModeText {
+		return errors.New("Not implemented")
+	} else {
+		return s.sendDatum(roster)
 	}
 
 }
@@ -462,7 +488,7 @@ func (s *Socket) readMsgpack() error {
 			return err
 		}
 
-		fmt.Printf("Roster: %+v\n", roster)
+		s.cb_Roster(&roster)
 
 	// Not currently handled
 	case DAuth:

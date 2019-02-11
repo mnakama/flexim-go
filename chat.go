@@ -72,6 +72,18 @@ func cb_Status(status *proto.Status) {
 	})
 }
 
+func cb_Roster(roster *proto.Roster) {
+	txt := ""
+	for _, user := range *roster {
+		txt += fmt.Sprintf("User: %s %x\n", user.Aliases, user.Key)
+	}
+
+	glib.IdleAdd(func() bool {
+		appendText(txt)
+		return false
+	})
+}
+
 func cb_Command(cmd *proto.Command) {
 	switch cmd.Cmd {
 	case "NICK":
@@ -310,7 +322,7 @@ func main() {
 
 	chatWindow()
 
-	sock.SetCallbacks(cb_Message, cb_Command, cb_Text, cb_Disconnect, cb_Status)
+	sock.SetCallbacks(cb_Message, cb_Command, cb_Text, cb_Disconnect, cb_Status, cb_Roster)
 
 	gtk.Main()
 }
