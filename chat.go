@@ -24,7 +24,7 @@ var config struct {
 
 // globals
 var (
-	sock          *proto.Socket
+	sock          proto.Socket
 	sentFirstLine bool
 	peerNick      string
 	peerName      = flag.String("to", "", "Name of chat partner")
@@ -131,7 +131,7 @@ func sendEntry() {
 		log.Panic(err)
 	}
 
-	if entryText == "" || sock == nil {
+	if entryText == "" { // TODO: check if connected
 		return
 	}
 
@@ -165,17 +165,12 @@ func sendEntry() {
 		case "msgpack":
 			sock.SetSendMode(proto.ModeMsgpack)
 		case "text":
-			cmd.Cmd = "TEXT"
 			sock.SetSendMode(proto.ModeText)
 		case "roster":
 			cmd.Cmd = "ROSTER"
 			sock.SendCommand(&cmd)
 		}
 	} else {
-		appendMsg(time.Now(), config.Nickname, entryText)
-
-		entry.SetText("")
-
 		msg := proto.Message{
 			To:    *peerName,
 			From:  config.Nickname,
@@ -186,7 +181,11 @@ func sendEntry() {
 
 		err := sock.SendMessage(&msg)
 		if err != nil {
-			log.Panic(err)
+			log.Print(err)
+			appendText(err.Error())
+		} else {
+			appendMsg(time.Now(), config.Nickname, entryText)
+			entry.SetText("")
 		}
 	}
 }
@@ -269,25 +268,24 @@ func main() {
 
 	peerNick = defaultPeerNick
 
-	var mode int
 	switch *modeFlag {
 	case "text":
-		mode = proto.ModeText
+		sock.SetMode(proto.ModeText)
 	case "msgpack":
-		mode = proto.ModeMsgpack
+		sock.SetMode(proto.ModeMsgpack)
 	default:
 		fmt.Println("Invalid protocol mode:", *modeFlag)
 		os.Exit(1)
 	}
 
 	if *socketFd >= 0 {
-		sock, err = proto.FromFD(*socketFd, mode)
+		err = sock.UseFD(*socketFd)
 		if err != nil {
 			log.Panic(err)
 		}
 	} else if *unixAddress != "" {
 		fmt.Println("Connecting to:", *unixAddress)
-		sock, err = proto.Dial("unix", *unixAddress, mode)
+		err = sock.Dial("unix", *unixAddress)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -299,7 +297,7 @@ func main() {
 	} else {
 		dest := flag.Arg(0)
 		fmt.Println(dest)
-		sock, err = proto.Dial("tcp", dest, mode)
+		err = sock.Dial("tcp", dest)
 		if err != nil {
 			log.Fatal(err)
 		}

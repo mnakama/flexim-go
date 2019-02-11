@@ -27,11 +27,12 @@ var config struct {
 }
 
 var (
-	server        *proto.Socket
+	server        proto.Socket
 	lastClient    *proto.Socket
 	clientMap     = make(map[string]*proto.Socket, 1)
 	serverAddress = flag.String("server", "hive.nullcorp.org:8000", "fleximd server to connect to")
 	username      = flag.String("user", "", "login name")
+	pubkey        string
 	tcplisten     = flag.String("tcplisten", "", "bind address for TCP clients")
 	unixlisten    = flag.String("listen", "", "bind address for local clients")
 
@@ -42,7 +43,9 @@ var (
 func login() error {
 	var err error
 
-	server, err = proto.Dial("tcp", *serverAddress, proto.ModeMsgpack)
+	server.SetMode(proto.ModeMsgpack)
+
+	err = server.Dial("tcp", *serverAddress)
 	if err != nil {
 		return err
 	}
@@ -81,7 +84,7 @@ func login() error {
 
 	auth := proto.Command{
 		Cmd:     "AUTH",
-		Payload: []string{hex.EncodeToString([]byte(*username)), *username},
+		Payload: []string{pubkey, *username},
 	}
 	server.SendCommand(&auth)
 
@@ -112,7 +115,10 @@ func newChatIn(msg *proto.Message) {
 		log.Panic(err)
 	}
 
-	sock, err := proto.FromFD(fd[0], proto.ModeMsgpack)
+	var sock proto.Socket
+	sock.SetMode(proto.ModeMsgpack)
+
+	err = sock.UseFD(fd[0])
 	if err != nil {
 		log.Panic(err)
 	}
@@ -145,28 +151,29 @@ func newChatIn(msg *proto.Message) {
 
 	log.Printf("Pid: %v", proc.Pid)
 
-	clientMap[partner] = sock
+	clientMap[partner] = &sock
 
 	sock.SetCallbacks(func(msg *proto.Message) { //msg
-		fmt.Printf("client -> server: %+v\n", msg)
-		msg.From = *username
+		log.Printf("client -> server: %+v\n", msg)
+		// override From with pubkey
+		msg.From = pubkey
 		server.SendMessage(msg)
 
-		lastClient = sock
+		lastClient = &sock
 	}, func(cmd *proto.Command) { // cmd
-		fmt.Println(cmd)
+		log.Println(cmd)
 
 		server.SendCommand(cmd)
-		lastClient = sock
+		lastClient = &sock
 	}, func(txt string) { // text
-		fmt.Println(txt)
+		log.Println(txt)
 
 	}, func() { // disconnect
-		fmt.Println("Chat window disconnected")
+		log.Println("Chat window disconnected")
 		delete(clientMap, partner)
 
 	}, func(status *proto.Status) { // status
-		fmt.Println(status)
+		log.Println(status)
 	})
 }
 
@@ -175,30 +182,33 @@ func newChatOut(conn net.Conn) {
 	to := ""
 
 	sock.SetCallbacks(func(msg *proto.Message) { //msg
-		fmt.Printf("client -> server: %+v\n", msg)
+		log.Printf("client -> server: %+v\n", msg)
 		if to == "" && msg.To != "" {
 			to = msg.To
 			clientMap[to] = sock
 		}
-		msg.From = *username
+
+		// override From with pubkey
+		msg.From = pubkey
 		server.SendMessage(msg)
 
 		lastClient = sock
 	}, func(cmd *proto.Command) { // cmd
-		fmt.Println(cmd)
+		log.Println(cmd)
 		server.SendCommand(cmd)
 
 		lastClient = sock
 	}, func(txt string) { // text
-		fmt.Println(txt)
+		log.Println(txt)
 
 	}, func() { // disconnect
+		log.Println("Chat window disconnected")
 		if to != "" {
 			delete(clientMap, to)
 		}
 
 	}, func(status *proto.Status) { // status
-		fmt.Println(status)
+		log.Println(status)
 	})
 }
 
@@ -254,6 +264,9 @@ func main() {
 	if *username == "" {
 		*username = config.Nickname
 	}
+
+	// placeholder: replace with actual pubkey when implemented
+	pubkey = hex.EncodeToString([]byte(*username))
 
 	login()
 

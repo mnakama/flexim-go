@@ -91,16 +91,28 @@ func newSocket(conn net.Conn, mode int) Socket {
 }
 
 func Dial(protocol string, addr string, mode int) (*Socket, error) {
+	s := newSocket(nil, mode)
 
-	conn, err := net.Dial(protocol, addr)
+	err := s.Dial(protocol, addr)
 	if err != nil {
 		return nil, err
 	}
 
-	s := newSocket(conn, mode)
-
 	fmt.Printf("Dial in mode: %d, %d\n", s.modeRecv, s.modeSend)
 	return &s, nil
+}
+
+func (s *Socket) Dial(protocol string, addr string) error {
+
+	conn, err := net.Dial(protocol, addr)
+	if err != nil {
+		return err
+	}
+
+	s.conn = conn
+
+	fmt.Printf("Connected to: %s://%s\n", protocol, addr)
+	return nil
 }
 
 func FromConn(sock net.Conn, mode int) *Socket {
@@ -108,21 +120,40 @@ func FromConn(sock net.Conn, mode int) *Socket {
 	return &s
 }
 
-func FromFD(fd int, mode int) (*Socket, error) {
-	file := os.NewFile(uintptr(fd), "")
-	if file == nil {
-		return nil, errors.New("Invalid file descriptor")
-	}
+func (s *Socket) UseConn(sock net.Conn) {
+	// Should Socket.conn just be public if we allow this?
+	s.conn = sock
+}
 
-	sock, err := net.FileConn(file)
+func FromFD(fd int, mode int) (*Socket, error) {
+	s := newSocket(nil, mode)
+
+	err := s.UseFD(fd)
 	if err != nil {
 		return nil, err
 	}
 
-	s := newSocket(sock, mode)
 	fmt.Printf("FromFD in mode: %d, %d\n", s.modeRecv, s.modeSend)
 
 	return &s, nil
+}
+
+func (s *Socket) UseFD(fd int) error {
+	file := os.NewFile(uintptr(fd), "")
+	if file == nil {
+		return errors.New("Invalid file descriptor")
+	}
+
+	sock, err := net.FileConn(file)
+	if err != nil {
+		return err
+	}
+
+	s.conn = sock
+
+	log.Printf("FromFD: %d\n", fd)
+
+	return nil
 }
 
 func (s *Socket) Read(buffer []byte) (int, error) {
@@ -143,16 +174,19 @@ func (s *Socket) SetCallbacks(message func(*Message), command func(*Command), tx
 }
 
 func (s *Socket) Close() error {
-	if s == nil {
+	if s == nil || s.conn == nil {
 		return errors.New("Cannot close nil Socket")
 	}
 
 	s.cb_Disconnect()
-	return s.conn.Close()
+	err := s.conn.Close()
+	s.conn = nil
+
+	return err
 }
 
 func (s *Socket) sendDatum(msg interface{}) error {
-	if s == nil {
+	if s == nil || s.conn == nil {
 		return errors.New("Cannot send datum to nil Socket")
 	}
 
@@ -188,7 +222,7 @@ func (s *Socket) sendDatum(msg interface{}) error {
 }
 
 func (s *Socket) SendHeader() error {
-	if s == nil {
+	if s == nil || s.conn == nil {
 		return errors.New("Cannot send header to nil Socket")
 	}
 
@@ -232,7 +266,7 @@ func (s *Socket) ReceiveHeader() error {
 }
 
 func (s *Socket) SendCommand(cmd *Command) error {
-	if s == nil {
+	if s == nil || s.conn == nil {
 		return errors.New("Cannot send command to nil Socket")
 	}
 
@@ -255,7 +289,7 @@ func (s *Socket) SendCommand(cmd *Command) error {
 }
 
 func (s *Socket) SendMessage(msg *Message) error {
-	if s == nil {
+	if s == nil || s.conn == nil {
 		return errors.New("Cannot send message to nil Socket")
 	}
 
@@ -269,7 +303,7 @@ func (s *Socket) SendMessage(msg *Message) error {
 }
 
 func (s *Socket) SendStatus(status *Status) error {
-	if s == nil {
+	if s == nil || s.conn == nil {
 		return errors.New("Cannot send message to nil Socket")
 	}
 
@@ -280,6 +314,15 @@ func (s *Socket) SendStatus(status *Status) error {
 		return s.sendDatum(status)
 	}
 
+}
+
+func (s *Socket) SetMode(mode int) {
+	if s.conn != nil {
+		log.Panicln("Cannot set send/recv mode on an active connection")
+	}
+
+	s.modeSend = mode
+	s.modeRecv = mode
 }
 
 func (s *Socket) SetSendMode(mode int) {
