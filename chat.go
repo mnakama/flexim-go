@@ -65,7 +65,6 @@ func cb_Disconnect() {
 
 func cb_Status(status *proto.Status) {
 	txt := fmt.Sprintf("%d: %s", status.Status, status.Payload)
-	fmt.Println(txt)
 
 	glib.IdleAdd(func() bool {
 		appendText(txt)
@@ -168,6 +167,9 @@ func sendEntry() {
 		case "text":
 			cmd.Cmd = "TEXT"
 			sock.SetSendMode(proto.ModeText)
+		case "roster":
+			cmd.Cmd = "ROSTER"
+			sock.SendCommand(&cmd)
 		}
 	} else {
 		appendMsg(time.Now(), config.Nickname, entryText)

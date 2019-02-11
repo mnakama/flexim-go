@@ -1,6 +1,7 @@
 package proto
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"github.com/vmihailenco/msgpack"
@@ -15,7 +16,13 @@ const maxPacketSize = 9000
 // Protocol modes
 const (
 	ModeMsgpack = iota
-	ModeText    = iota
+	ModeText
+)
+
+// Protocol headers
+var (
+	HeaderMsgpack = []byte{'\xa4', 'F', 'L', 'E', 'X'}
+	HeaderText    = []byte{'\x00', 'F', 'L', 'E', 'X'}
 )
 
 // Datum Types
@@ -48,8 +55,17 @@ type Status struct {
 	Payload string `msgpack:"payload"`
 }
 
+type Roster []User
+
+type User struct {
+	Aliases  []string `msgpack:"aliases"`
+	Key      []byte   `msgpack:"key"`
+	LastSeen int64    `msgpack:"last_seen"`
+}
+
 type Socket struct {
 	conn          net.Conn
+	gotHeader     bool
 	modeSend      int
 	modeRecv      int
 	cb_Message    func(*Message)
@@ -59,8 +75,19 @@ type Socket struct {
 	cb_Status     func(*Status)
 }
 
+func printMsgpack(data []byte) {
+	var unpacked interface{}
+
+	err := msgpack.Unmarshal(data, &unpacked)
+	if err != nil {
+		log.Panic(err)
+	}
+
+	fmt.Printf("msgpack: %+v\n", unpacked)
+}
+
 func newSocket(conn net.Conn, mode int) Socket {
-	return Socket{conn, mode, mode, nil, nil, nil, nil, nil}
+	return Socket{conn, false, mode, mode, nil, nil, nil, nil, nil}
 }
 
 func Dial(protocol string, addr string, mode int) (*Socket, error) {
@@ -116,11 +143,19 @@ func (s *Socket) SetCallbacks(message func(*Message), command func(*Command), tx
 }
 
 func (s *Socket) Close() error {
+	if s == nil {
+		return errors.New("Cannot close nil Socket")
+	}
+
 	s.cb_Disconnect()
 	return s.conn.Close()
 }
 
 func (s *Socket) sendDatum(msg interface{}) error {
+	if s == nil {
+		return errors.New("Cannot send datum to nil Socket")
+	}
+
 	datum, err := msgpack.Marshal(msg)
 	if err != nil {
 		return err
@@ -133,6 +168,8 @@ func (s *Socket) sendDatum(msg interface{}) error {
 		dt = DCommand
 	case *Message:
 		dt = DMessage
+	case *Status:
+		dt = DStatus
 	default:
 		log.Panicf("Tried to send unknown datum type: %v %t", msg, msg)
 	}
@@ -140,13 +177,23 @@ func (s *Socket) sendDatum(msg interface{}) error {
 	packet := make([]byte, 0, len(datum)+3)
 	packet = append(packet, byte(dt), byte(len(datum)>>8), byte(len(datum)&0xFF))
 	packet = append(packet, datum...)
-	fmt.Println(packet[0], packet[1:3], len(datum), string(packet))
+	//fmt.Println(packet[0], packet[1:3], len(datum), string(packet))
+
 	_, err = s.conn.Write(packet)
+	if err != nil {
+		fmt.Println("Error sending packet")
+	}
 
 	return err
 }
 
 func (s *Socket) SendHeader() error {
+	if s == nil {
+		return errors.New("Cannot send header to nil Socket")
+	}
+
+	s.gotHeader = true
+
 	switch s.modeSend {
 	case ModeText:
 		_, err := s.Write([]byte("\x00FLEX"))
@@ -159,7 +206,36 @@ func (s *Socket) SendHeader() error {
 	return errors.New("Invalid send mode is set")
 }
 
+func (s *Socket) ReceiveHeader() error {
+	header := make([]byte, 5)
+
+	_, err := io.ReadFull(s, header)
+	if err != nil {
+		return err
+	}
+
+	if bytes.Equal(header, HeaderMsgpack) {
+		s.modeRecv = ModeMsgpack
+		s.modeSend = ModeMsgpack
+		s.gotHeader = true
+
+	} else if bytes.Equal(header, HeaderText) {
+		s.modeRecv = ModeText
+		s.modeSend = ModeText
+		s.gotHeader = true
+
+	} else {
+		return fmt.Errorf("Invalid Header: %+v", header)
+	}
+
+	return nil
+}
+
 func (s *Socket) SendCommand(cmd *Command) error {
+	if s == nil {
+		return errors.New("Cannot send command to nil Socket")
+	}
+
 	switch s.modeSend {
 	case ModeText:
 		var payloadStr string
@@ -179,11 +255,29 @@ func (s *Socket) SendCommand(cmd *Command) error {
 }
 
 func (s *Socket) SendMessage(msg *Message) error {
+	if s == nil {
+		return errors.New("Cannot send message to nil Socket")
+	}
+
 	if s.modeSend == ModeText {
 		_, err := s.Write([]byte(msg.Msg + "\r"))
 		return err
 	} else {
 		return s.sendDatum(msg)
+	}
+
+}
+
+func (s *Socket) SendStatus(status *Status) error {
+	if s == nil {
+		return errors.New("Cannot send message to nil Socket")
+	}
+
+	if s.modeSend == ModeText {
+		_, err := s.Write([]byte(fmt.Sprintf("%d %s\r", status.Status, status.Payload)))
+		return err
+	} else {
+		return s.sendDatum(status)
 	}
 
 }
@@ -225,102 +319,151 @@ func (s *Socket) processCommand(cmd *Command) {
 }
 
 func (s *Socket) readSocket() {
-	buffer := make([]byte, maxPacketSize)
+
+	if !s.gotHeader {
+		if err := s.ReceiveHeader(); err != nil {
+			s.Close()
+
+			s.cb_Text(fmt.Sprintf("Error reading header: %s", err))
+			return
+		}
+	}
 
 	for {
-		count, err := s.Read(buffer)
+		var err error
+		if s.modeRecv == ModeMsgpack {
+			err = s.readMsgpack()
+		} else {
+			err = s.readText()
+		}
+
 		if err != nil {
 			if err == io.EOF {
-				msg := "Disconnected"
-				s.Close()
-				s.cb_Text(msg)
-
-				return
+				s.cb_Text("Disconnected")
+				break
 			}
 
 			switch t := err.(type) {
 			case *net.OpError:
 				s.cb_Text(t.Error())
-				return
+				break
 			}
 
-			log.Panicf("%v\n%t\n\n", err, err)
-		}
-
-		packet := buffer[:count]
-
-		if s.modeRecv == ModeMsgpack {
-			if len(packet) < 3 {
-				s.cb_Text(fmt.Sprintf("Msgpack datum too small: 0x%x", len(packet)))
-				continue
-			}
-
-			dt := packet[0]
-			size := (int(packet[1]) << 8) | int(packet[2])
-
-			if len(packet) < size+3 {
-				s.cb_Text(fmt.Sprintf("Msgpack size header: 0x%x Actual size: 0x%x", size, len(packet)-3))
-				continue
-			}
-			datum := packet[3 : size+3]
-
-			switch dt {
-			case DCommand:
-				var cmd Command
-				err = msgpack.Unmarshal(datum, &cmd)
-				if err != nil {
-					log.Panic(err)
-				}
-
-				s.processCommand(&cmd)
-				if s == nil {
-					return
-				}
-
-			case DMessage:
-				var msg Message
-				err = msgpack.Unmarshal(datum, &msg)
-				if err != nil {
-					log.Panic(err)
-				}
-
-				s.cb_Message(&msg)
-
-			case DStatus:
-				var status Status
-				err = msgpack.Unmarshal(datum, &status)
-				if err != nil {
-					log.Panic(err)
-				}
-
-				s.cb_Status(&status)
-
-			default:
-				s.cb_Text(fmt.Sprintf("Unrecognized datum type: %v", dt))
-			}
-
-		} else {
-			if packet[0] == 0 {
-				// Command
-				if len(packet) >= 5 {
-					cmd := Command{
-						Cmd:     string(packet[1:5]),
-						Payload: []string{string(packet[5:])},
-					}
-
-					s.processCommand(&cmd)
-				}
-			} else {
-				// Message
-				msg := packet[:count-1]
-
-				fmt.Printf("%d %s\n", count, msg)
-				msgObj := Message{
-					Msg: string(msg),
-				}
-				s.cb_Message(&msgObj)
-			}
+			s.cb_Text(err.Error())
 		}
 	}
+
 	s.Close()
+}
+
+func (s *Socket) readMsgpack() error {
+	header := make([]byte, 3)
+
+	_, err := io.ReadFull(s, header)
+	if err != nil {
+		return err
+	}
+
+	// first byte is datum type
+	dt := header[0]
+	// 2nd and 3rd bytes are datum length in bytes
+	size := (int(header[1]) << 8) | int(header[2])
+
+	datum := make([]byte, size)
+	_, err = io.ReadFull(s, datum)
+	if err != nil {
+		s.cb_Text(err.Error())
+		return err
+	}
+
+	switch dt {
+	case DCommand:
+		var cmd Command
+		err = msgpack.Unmarshal(datum, &cmd)
+		if err != nil {
+			log.Panic(err)
+		}
+
+		s.processCommand(&cmd)
+		if s == nil {
+			return nil
+		}
+
+	case DMessage:
+		var msg Message
+		err = msgpack.Unmarshal(datum, &msg)
+		if err != nil {
+			return err
+		}
+
+		s.cb_Message(&msg)
+
+	case DStatus:
+		var status Status
+		err = msgpack.Unmarshal(datum, &status)
+		if err != nil {
+			return err
+		}
+
+		if status.Status == 0 && status.Payload == "" {
+			fmt.Println("Empty status received.")
+			printMsgpack(datum)
+		}
+
+		s.cb_Status(&status)
+
+	case DRoster:
+		var roster Roster
+		err = msgpack.Unmarshal(datum, &roster)
+		if err != nil {
+			return err
+		}
+
+		fmt.Printf("Roster: %+v\n", roster)
+
+	// Not currently handled
+	case DAuth:
+		s.cb_Text("Auth datum not handled")
+	case DAuthResponse:
+		s.cb_Text("AuthResponse datum not handled")
+	case DUser:
+		s.cb_Text("User datum not handled")
+
+	default:
+		s.cb_Text(fmt.Sprintf("Unrecognized datum type: %v", dt))
+	}
+
+	return nil
+}
+
+func (s *Socket) readText() error {
+	buffer := make([]byte, 1500)
+	count, err := s.Read(buffer)
+	if err != nil {
+		s.cb_Text(err.Error())
+		return err
+	}
+
+	if buffer[0] == 0 {
+		// Command
+		if len(buffer) >= 5 {
+			cmd := Command{
+				Cmd:     string(buffer[1:5]),
+				Payload: []string{string(buffer[5:])},
+			}
+
+			s.processCommand(&cmd)
+		}
+	} else {
+		// Message
+		msg := buffer[:count-1]
+
+		fmt.Printf("%d %s\n", count, msg)
+		msgObj := Message{
+			Msg: string(msg),
+		}
+		s.cb_Message(&msgObj)
+	}
+
+	return nil
 }

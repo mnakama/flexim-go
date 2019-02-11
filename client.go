@@ -6,6 +6,7 @@ package main
 // - maybe the client sockets need mutexes?
 
 import (
+	"encoding/hex"
 	"flag"
 	"fmt"
 	"github.com/mnakama/flexim-go/proto"
@@ -27,6 +28,7 @@ var config struct {
 
 var (
 	server        *proto.Socket
+	lastClient    *proto.Socket
 	clientMap     = make(map[string]*proto.Socket, 1)
 	serverAddress = flag.String("server", "hive.nullcorp.org:8000", "fleximd server to connect to")
 	username      = flag.String("user", "", "login name")
@@ -72,15 +74,14 @@ func login() error {
 		fmt.Println("Disconnected from server")
 		go reconnect()
 	}, func(status *proto.Status) { // status
-		fmt.Println(status)
-		if status.Status < 0 {
-			quit(1)
+		if lastClient != nil {
+			lastClient.SendStatus(status)
 		}
 	})
 
 	auth := proto.Command{
 		Cmd:     "AUTH",
-		Payload: []string{*username},
+		Payload: []string{hex.EncodeToString([]byte(*username)), *username},
 	}
 	server.SendCommand(&auth)
 
@@ -116,6 +117,10 @@ func newChatIn(msg *proto.Message) {
 		log.Panic(err)
 	}
 
+	err = sock.SendHeader()
+	if err != nil {
+		log.Panic(err)
+	}
 	err = sock.SendMessage(msg)
 	if err != nil {
 		log.Panic(err)
@@ -143,12 +148,16 @@ func newChatIn(msg *proto.Message) {
 	clientMap[partner] = sock
 
 	sock.SetCallbacks(func(msg *proto.Message) { //msg
-		fmt.Println(msg)
+		fmt.Printf("client -> server: %+v\n", msg)
 		msg.From = *username
 		server.SendMessage(msg)
+
+		lastClient = sock
 	}, func(cmd *proto.Command) { // cmd
 		fmt.Println(cmd)
 
+		server.SendCommand(cmd)
+		lastClient = sock
 	}, func(txt string) { // text
 		fmt.Println(txt)
 
@@ -166,16 +175,20 @@ func newChatOut(conn net.Conn) {
 	to := ""
 
 	sock.SetCallbacks(func(msg *proto.Message) { //msg
-		fmt.Println(msg)
+		fmt.Printf("client -> server: %+v\n", msg)
 		if to == "" && msg.To != "" {
 			to = msg.To
 			clientMap[to] = sock
 		}
 		msg.From = *username
 		server.SendMessage(msg)
+
+		lastClient = sock
 	}, func(cmd *proto.Command) { // cmd
 		fmt.Println(cmd)
+		server.SendCommand(cmd)
 
+		lastClient = sock
 	}, func(txt string) { // text
 		fmt.Println(txt)
 
