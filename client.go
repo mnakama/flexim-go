@@ -84,6 +84,14 @@ func login() error {
 		if lastClient != nil {
 			lastClient.SendRoster(roster)
 		}
+	}, func(auth *proto.Auth) { // auth
+		fmt.Printf("Challenge received: %s\n", auth.Challenge)
+
+		resp := proto.AuthResponse{Challenge: auth.Challenge}
+		err := server.SendAuthResponse(&resp)
+		if err != nil {
+			log.Print(err)
+		}
 	})
 
 	auth := proto.Command{
@@ -113,6 +121,10 @@ func cb_Status(status *proto.Status) {
 
 func cb_Roster(roster *proto.Roster) {
 	log.Println(roster)
+}
+
+func cb_Auth(auth *proto.Auth) {
+	log.Println(auth)
 }
 
 func newChatIn(msg *proto.Message) {
@@ -186,7 +198,8 @@ func newChatIn(msg *proto.Message) {
 
 	},
 		cb_Status, // status
-		cb_Roster) // roster
+		cb_Roster, // roster
+		cb_Auth)   // auth
 }
 
 func newChatOut(conn net.Conn) {
@@ -221,7 +234,8 @@ func newChatOut(conn net.Conn) {
 
 	},
 		cb_Status, // status
-		cb_Roster) // roster
+		cb_Roster, // roster
+		cb_Auth)   // auth
 }
 
 func listenLoop(ln net.Listener) {

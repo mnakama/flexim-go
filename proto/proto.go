@@ -37,6 +37,16 @@ const (
 )
 
 // Datum structures
+type Auth struct {
+	Date      int64  `msgpack:"date"`
+	Challenge string `msgpack:"challenge"` // Encrypted with User's public key.
+	LastSeen  int64  `msgpack:"last_seen"`
+}
+
+type AuthResponse struct {
+	Challenge string `msgpack:"challenge"`
+}
+
 type Command struct {
 	Cmd     string   `msgpack:"cmd"`
 	Payload []string `msgpack:"payload"`
@@ -74,6 +84,7 @@ type Socket struct {
 	cb_Disconnect func()
 	cb_Status     func(*Status)
 	cb_Roster     func(*Roster)
+	cb_Auth       func(*Auth)
 }
 
 func printMsgpack(data []byte) {
@@ -171,13 +182,14 @@ func (s *Socket) Write(buffer []byte) (int, error) {
 	return s.conn.Write(buffer)
 }
 
-func (s *Socket) SetCallbacks(message func(*Message), command func(*Command), txt func(string), disconnect func(), status func(*Status), roster func(*Roster)) {
+func (s *Socket) SetCallbacks(message func(*Message), command func(*Command), txt func(string), disconnect func(), status func(*Status), roster func(*Roster), auth func(*Auth)) {
 	s.cb_Message = message
 	s.cb_Command = command
 	s.cb_Text = txt
 	s.cb_Disconnect = disconnect
 	s.cb_Status = status
 	s.cb_Roster = roster
+	s.cb_Auth = auth
 	go s.readSocket()
 }
 
@@ -214,6 +226,8 @@ func (s *Socket) sendDatum(msg interface{}) error {
 		dt = DStatus
 	case *Roster:
 		dt = DRoster
+	case *AuthResponse:
+		dt = DAuthResponse
 	default:
 		log.Panicf("Tried to send unknown datum type: %v %t", msg, msg)
 	}
@@ -342,6 +356,10 @@ func (s *Socket) SendRoster(roster *Roster) error {
 
 }
 
+func (s *Socket) SendAuthResponse(resp *AuthResponse) error {
+	return s.sendDatum(resp)
+}
+
 func (s *Socket) SetMode(mode int) {
 	if s.conn != nil {
 		log.Panicln("Cannot set send/recv mode on an active connection")
@@ -450,7 +468,7 @@ func (s *Socket) readMsgpack() error {
 		var cmd Command
 		err = msgpack.Unmarshal(datum, &cmd)
 		if err != nil {
-			log.Panic(err)
+			return err
 		}
 
 		s.processCommand(&cmd)
@@ -492,7 +510,13 @@ func (s *Socket) readMsgpack() error {
 
 	// Not currently handled
 	case DAuth:
-		s.cb_Text("Auth datum not handled")
+		var auth Auth
+		err = msgpack.Unmarshal(datum, &auth)
+		if err != nil {
+			return err
+		}
+
+		s.cb_Auth(&auth)
 	case DAuthResponse:
 		s.cb_Text("AuthResponse datum not handled")
 	case DUser:

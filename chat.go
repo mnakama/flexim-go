@@ -3,15 +3,16 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/gotk3/gotk3/glib"
-	"github.com/gotk3/gotk3/gtk"
-	"github.com/mnakama/flexim-go/proto"
-	"gopkg.in/yaml.v2"
 	"io/ioutil"
 	"log"
 	"os"
 	"strings"
 	"time"
+
+	"github.com/gotk3/gotk3/glib"
+	"github.com/gotk3/gotk3/gtk"
+	"github.com/mnakama/flexim-go/proto"
+	"gopkg.in/yaml.v2"
 )
 
 const defaultPeerNick = "them" // Used if we do not have chat partner's nick
@@ -61,6 +62,11 @@ func cb_Text(txt string) {
 
 func cb_Disconnect() {
 	// TODO: disable message sending
+}
+
+func cb_Auth(auth *proto.Auth) {
+	// TODO: something
+	fmt.Printf("Received Auth packet for some reason? %s\n", auth)
 }
 
 func cb_Status(status *proto.Status) {
@@ -322,7 +328,7 @@ func main() {
 
 	chatWindow()
 
-	sock.SetCallbacks(cb_Message, cb_Command, cb_Text, cb_Disconnect, cb_Status, cb_Roster)
+	sock.SetCallbacks(cb_Message, cb_Command, cb_Text, cb_Disconnect, cb_Status, cb_Roster, cb_Auth)
 
 	gtk.Main()
 }
