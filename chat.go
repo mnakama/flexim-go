@@ -216,7 +216,7 @@ func chatWindow() {
 		log.Panic(err)
 	}
 
-	win.SetTitle("Flexim")
+	win.SetTitle(*peerName)
 	win.Connect("destroy", func() {
 		gtk.MainQuit()
 	})
