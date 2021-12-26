@@ -18,6 +18,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -171,30 +172,28 @@ func listenServer(irc net.Conn) {
 				clientID := getClientID(from, to)
 				sendToClient(clientID, msg)
 			} else if msgType == "JOIN" {
-				to := fields[2]
+				channel := fields[2]
 				msg := proto.Message{
-					To:   to,
-					From: to,
+					To:   channel,
+					From: channel,
 					Msg:  fmt.Sprintf("%s has joined the channel", from),
 				}
 
-				clientID := getClientID(from, to)
-				sendToClient(clientID, msg)
+				sendToClient(channel, msg)
 			} else if msgType == "PART" {
-				to := fields[2]
+				channel := fields[2]
 				var partMsg string
 				if len(fields) > 2 {
 					partMsg = strings.TrimPrefix(strings.Join(fields[3:], " "), ":")
 				}
 
 				msg := proto.Message{
-					To:   to,
-					From: to,
+					To:   channel,
+					From: channel,
 					Msg:  fmt.Sprintf("%s has left the channel (%s)", from, partMsg),
 				}
 
-				clientID := getClientID(from, to)
-				sendToClient(clientID, msg)
+				sendToClient(channel, msg)
 			} else if msgType == "QUIT" {
 				quitNick := nickFromMask(from)
 				quitMsg := strings.TrimPrefix(strings.Join(fields[2:], " "), ":")
@@ -227,12 +226,31 @@ func listenServer(irc net.Conn) {
 				to := fields[2]
 				channel := fields[3]
 				topic := strings.TrimPrefix(strings.Join(fields[4:], " "), ":")
+
+				// convert pipes to newlines
+				topic = strings.ReplaceAll(topic, " | ", "\n  ")
+
 				msg := proto.Message{
 					To:   to,
 					From: channel,
 					Msg:  fmt.Sprintf("Topic: %s", topic),
 				}
 				sendToClient(channel, msg)
+			} else if msgType == "333" {
+				to := fields[2]
+				channel := fields[3]
+				who := fields[4]
+				whenInt, _ := strconv.ParseInt(fields[5], 10, 64)
+
+				when := time.Unix(whenInt, 0)
+				msg := proto.Message{
+					To:   to,
+					From: channel,
+					Msg: fmt.Sprintf("Topic set by %s on %s",
+						who, when.Format("2006/01/02 15:04 MST")),
+				}
+				sendToClient(channel, msg)
+
 			} else if msgType == "353" {
 				// list of nicknames when joining a channel
 				//to := fields[2]
@@ -285,7 +303,6 @@ func addChannelMembers(channel string, members []string) {
 		c.members = append(c.members, member)
 	}
 
-	log.Printf("total members: %s", members)
 	channels[channel] = c
 }
 
@@ -418,7 +435,6 @@ func setCallbacks(sock *proto.Socket, clientID string) {
 			ircCmd = fmt.Sprintf("PRIVMSG %s :%s", msg.To, ircCmd[cmdLen:])
 		}
 		fmt.Printf("%s\n", ircCmd)
-		fmt.Printf("len: %d\n", len(ircCmd))
 		fmt.Fprintf(irc, "%s\r\n", ircCmd)
 
 		lastClient = sock
