@@ -53,7 +53,7 @@ var (
 	chatLimit = flag.Int("chatlimit", 30, "flood protection: maximum amount of open chats")
 )
 
-func login() (irc net.Conn, err error) {
+func login() (err error) {
 	if !config.UseTLS {
 		irc, err = net.Dial("tcp", config.Address)
 	} else {
@@ -68,10 +68,12 @@ func login() (irc net.Conn, err error) {
 	}
 
 	if config.ServerPassword != "" {
+		// don't echo the password
+		fmt.Println("PASS :********")
 		fmt.Fprintf(irc, "PASS :%s\n", config.ServerPassword)
 	}
-	fmt.Fprintf(irc, "NICK %s\n", config.Nickname)
-	fmt.Fprintf(irc, "USER %s 0 * :%s\n", config.Username, config.Realname)
+	sendIRCCmd(fmt.Sprintf("NICK %s", config.Nickname))
+	sendIRCCmd(fmt.Sprintf("USER %s 0 * :%s", config.Username, config.Realname))
 
 	go listenServer(irc)
 
@@ -116,6 +118,203 @@ func getClientID(from, to string) (id string) {
 	return
 }
 
+func sendIRCCmd(cmd string) {
+	if irc == nil {
+		log.Print("cannot send command; irc is nil")
+		return
+	}
+	fmt.Printf("%s\n", cmd)
+	fmt.Fprintf(irc, "%s\n", cmd)
+}
+
+func processIRCLine(line string) {
+	line = strings.TrimSuffix(line, "\n")
+	line = strings.TrimSuffix(line, "\r")
+	fmt.Println(line)
+
+	if strings.HasPrefix(line, "PING ") {
+		cmd := fmt.Sprintf("PONG %s", line[5:])
+		sendIRCCmd(cmd)
+
+		return
+	}
+
+	var (
+		//tags   string
+		source string
+		verb   string
+		params []string
+	)
+
+	{
+		// code block for temporary vars that I don't want leaking into the rest of the code
+		fields := strings.Fields(line)
+
+		if strings.HasPrefix(fields[0], "@") {
+			//tags = fields[0][1:]
+			fields = fields[1:]
+		}
+
+		if strings.HasPrefix(fields[0], ":") {
+			source = fields[0][1:]
+			fields = fields[1:]
+		}
+
+		verb = fields[0]
+		fields = fields[1:]
+
+		for i, field := range fields {
+			if strings.HasPrefix(field, ":") {
+				newfields := fields[:i]
+				longfield := strings.Join(fields[i:], " ")[1:]
+				newfields = append(newfields, longfield)
+				fields = newfields
+				break
+			}
+		}
+
+		params = fields
+	}
+
+	if verb == "PRIVMSG" || verb == "NOTICE" {
+		to := params[0]
+		text := params[1]
+
+		if to == "*" {
+			idx := strings.Index(text, "Found your hostname: ")
+			if idx > 0 {
+				setHostname(text[idx+21:])
+			}
+			// only needs to be in status window
+			return
+		}
+
+		msg := proto.Message{
+			To:   to,
+			From: source,
+			Msg:  text,
+		}
+
+		clientID := getClientID(source, to)
+		sendToClient(clientID, msg)
+	} else if verb == "JOIN" {
+		channel := params[0]
+		msg := proto.Message{
+			To:   channel,
+			From: channel,
+			Msg:  fmt.Sprintf("%s has joined the channel", source),
+		}
+
+		sendToClient(channel, msg)
+	} else if verb == "PART" {
+		channel := params[0]
+		var partMsg string
+		if len(params) > 1 {
+			partMsg = params[1]
+		}
+
+		msg := proto.Message{
+			To:   channel,
+			From: channel,
+			Msg:  fmt.Sprintf("%s has left the channel (%s)", source, partMsg),
+		}
+
+		sendToClient(channel, msg)
+	} else if verb == "QUIT" {
+		quitNick := nickFromMask(source)
+		quitMsg := params[0]
+
+		for channelName, c := range channels {
+			for _, member := range c.members {
+				if quitNick == member {
+					msg := proto.Message{
+						To:   channelName,
+						From: channelName,
+						Msg:  fmt.Sprintf("%s has quit (%s)", source, quitMsg),
+					}
+					sendToClient(channelName, msg)
+					break
+				}
+			}
+		}
+
+		client, found := clientMap[quitNick]
+		if found {
+			msg := proto.Message{
+				To:   source,
+				From: source,
+				Msg:  fmt.Sprintf("%s has quit (%s)", source, quitMsg),
+			}
+			client.SendMessage(&msg)
+		}
+
+	} else if verb == "332" {
+		to := params[0]
+		channel := params[1]
+		topic := params[2]
+
+		// convert pipes to newlines
+		topic = strings.ReplaceAll(topic, " | ", "\n  ")
+
+		msg := proto.Message{
+			To:   to,
+			From: channel,
+			Msg:  fmt.Sprintf("Topic: %s", topic),
+		}
+		sendToClient(channel, msg)
+	} else if verb == "333" {
+		to := params[0]
+		channel := params[1]
+		who := params[2]
+		whenInt, _ := strconv.ParseInt(params[3], 10, 64)
+
+		when := time.Unix(whenInt, 0)
+		msg := proto.Message{
+			To:   to,
+			From: channel,
+			Msg: fmt.Sprintf("Topic set by %s on %s",
+				who, when.Format("2006/01/02 15:04 MST")),
+		}
+		sendToClient(channel, msg)
+
+	} else if verb == "353" {
+		// list of nicknames when joining a channel
+		//to := fields[2]
+		channel := params[2]
+		members := strings.Split(params[3], " ")
+
+		addChannelMembers(channel, members)
+	} else if verb == "354" {
+		// list of users and masks when running /who
+	} else if verb == "315" {
+		// end of /who list
+	} else if verb == "366" {
+		to := params[0]
+		channelName := params[1]
+
+		channel := channels[channelName]
+		members := channel.members
+		text := fmt.Sprintf("People in this channel: %s", strings.Join(members, ", "))
+		msg := proto.Message{
+			To:   to,
+			From: channelName,
+			Msg:  text,
+		}
+
+		sendToClient(channelName, msg)
+	} else {
+		if lastClient != nil {
+			msg := proto.Message{
+				To:   "*",
+				From: source,
+				Msg:  line,
+			}
+			lastClient.SendMessage(&msg)
+		}
+	}
+
+}
+
 func listenServer(irc net.Conn) {
 	var reader *bufio.Reader
 	reader = bufio.NewReader(irc)
@@ -133,161 +332,7 @@ func listenServer(irc net.Conn) {
 			continue
 		}
 
-		line = line[:len(line)-1]
-		fmt.Println(line)
-
-		if strings.HasPrefix(line, "PING ") {
-			msg := fmt.Sprintf("PONG %s\n", line[5:])
-			fmt.Print(msg)
-			fmt.Fprint(irc, msg)
-
-			continue
-		}
-
-		if strings.HasPrefix(line, ":") {
-			fields := strings.Fields(line)
-			from := fields[0][1:]
-			msgType := fields[1]
-
-			if msgType == "PRIVMSG" || msgType == "NOTICE" {
-				to := fields[2]
-				text := strings.Join(fields[3:], " ")
-				text = strings.TrimPrefix(text, ":")
-
-				if to == "*" {
-					idx := strings.Index(text, "Found your hostname: ")
-					if idx > 0 {
-						setHostname(text[idx+21:])
-					}
-					// only needs to be in status window
-					continue
-				}
-
-				msg := proto.Message{
-					To:   to,
-					From: from,
-					Msg:  text,
-				}
-
-				clientID := getClientID(from, to)
-				sendToClient(clientID, msg)
-			} else if msgType == "JOIN" {
-				channel := fields[2]
-				msg := proto.Message{
-					To:   channel,
-					From: channel,
-					Msg:  fmt.Sprintf("%s has joined the channel", from),
-				}
-
-				sendToClient(channel, msg)
-			} else if msgType == "PART" {
-				channel := fields[2]
-				var partMsg string
-				if len(fields) > 2 {
-					partMsg = strings.TrimPrefix(strings.Join(fields[3:], " "), ":")
-				}
-
-				msg := proto.Message{
-					To:   channel,
-					From: channel,
-					Msg:  fmt.Sprintf("%s has left the channel (%s)", from, partMsg),
-				}
-
-				sendToClient(channel, msg)
-			} else if msgType == "QUIT" {
-				quitNick := nickFromMask(from)
-				quitMsg := strings.TrimPrefix(strings.Join(fields[2:], " "), ":")
-
-				for channelName, c := range channels {
-					for _, member := range c.members {
-						if quitNick == member {
-							msg := proto.Message{
-								To:   channelName,
-								From: channelName,
-								Msg:  fmt.Sprintf("%s has quit (%s)", from, quitMsg),
-							}
-							sendToClient(channelName, msg)
-							break
-						}
-					}
-				}
-
-				client, found := clientMap[quitNick]
-				if found {
-					msg := proto.Message{
-						To:   from,
-						From: from,
-						Msg:  fmt.Sprintf("%s has quit (%s)", from, quitMsg),
-					}
-					client.SendMessage(&msg)
-				}
-
-			} else if msgType == "332" {
-				to := fields[2]
-				channel := fields[3]
-				topic := strings.TrimPrefix(strings.Join(fields[4:], " "), ":")
-
-				// convert pipes to newlines
-				topic = strings.ReplaceAll(topic, " | ", "\n  ")
-
-				msg := proto.Message{
-					To:   to,
-					From: channel,
-					Msg:  fmt.Sprintf("Topic: %s", topic),
-				}
-				sendToClient(channel, msg)
-			} else if msgType == "333" {
-				to := fields[2]
-				channel := fields[3]
-				who := fields[4]
-				whenInt, _ := strconv.ParseInt(fields[5], 10, 64)
-
-				when := time.Unix(whenInt, 0)
-				msg := proto.Message{
-					To:   to,
-					From: channel,
-					Msg: fmt.Sprintf("Topic set by %s on %s",
-						who, when.Format("2006/01/02 15:04 MST")),
-				}
-				sendToClient(channel, msg)
-
-			} else if msgType == "353" {
-				// list of nicknames when joining a channel
-				//to := fields[2]
-				channel := fields[4]
-				members := fields[5:]
-				members[0] = strings.TrimPrefix(members[0], ":")
-
-				addChannelMembers(channel, members)
-			} else if msgType == "354" {
-				// list of users and masks when running /who
-			} else if msgType == "315" {
-				// end of /who list
-			} else if msgType == "366" {
-				to := fields[2]
-				channelName := fields[3]
-
-				channel := channels[channelName]
-				members := channel.members
-				text := fmt.Sprintf("People in this channel: %s", strings.Join(members, ", "))
-				msg := proto.Message{
-					To:   to,
-					From: channelName,
-					Msg:  text,
-				}
-
-				sendToClient(channelName, msg)
-			} else {
-				if lastClient != nil {
-					msg := proto.Message{
-						To:   "*",
-						From: from,
-						Msg:  strings.Join(fields[1:], " "),
-					}
-					lastClient.SendMessage(&msg)
-				}
-			}
-		}
+		processIRCLine(line)
 	}
 }
 
@@ -327,8 +372,7 @@ func sendToClient(clientID string, msg proto.Message) {
 func reconnect() {
 	for {
 		time.Sleep(time.Second)
-		_, err := login()
-		if err != nil {
+		if err := login(); err != nil {
 			log.Println(err)
 		} else {
 			return
@@ -420,8 +464,8 @@ func setCallbacks(sock *proto.Socket, clientID string) {
 			clientMap[clientID] = sock
 
 			if strings.HasPrefix(clientID, "#") {
-				fmt.Printf("JOIN %s\n", clientID)
-				fmt.Fprintf(irc, "JOIN %s\n", clientID)
+				cmd := fmt.Sprintf("JOIN %s", clientID)
+				sendIRCCmd(cmd)
 			}
 		}
 
@@ -430,12 +474,10 @@ func setCallbacks(sock *proto.Socket, clientID string) {
 		cmdLen := maxIRCLen - getMaskLen() - 2
 		ircCmd := fmt.Sprintf("PRIVMSG %s :%s", msg.To, msg.Msg)
 		for len(ircCmd) > cmdLen {
-			fmt.Printf("%s\n", ircCmd[:cmdLen])
-			fmt.Fprintf(irc, "%s\n", ircCmd[:cmdLen])
+			sendIRCCmd(ircCmd[:cmdLen])
 			ircCmd = fmt.Sprintf("PRIVMSG %s :%s", msg.To, ircCmd[cmdLen:])
 		}
-		fmt.Printf("%s\n", ircCmd)
-		fmt.Fprintf(irc, "%s\r\n", ircCmd)
+		sendIRCCmd(ircCmd)
 
 		lastClient = sock
 	}, func(cmd *proto.Command) { // cmd
@@ -524,8 +566,7 @@ func main() {
 	fmt.Println(config)
 
 	// connect
-	irc, err = login()
-	if err != nil {
+	if err := login(); err != nil {
 		log.Fatal(err)
 	}
 
