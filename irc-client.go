@@ -101,6 +101,12 @@ func setHostname(hostname string) {
 	log.Printf("guessed mask = '%s'", guessMask())
 }
 
+func leaveChannel(channel string) {
+	delete(channels, channel)
+
+	sendIRCCmd(fmt.Sprintf("PART %s", channel))
+}
+
 func getClientID(from, to string) (id string) {
 	if strings.HasPrefix(to, "#") {
 		id = to
@@ -361,12 +367,8 @@ func nickFromMask(mask string) string {
 }
 
 func sendToClient(clientID string, msg proto.Message) {
-	client := clientMap[clientID]
-	if client != nil {
-		client.SendMessage(&msg)
-	} else {
-		newChatIn(clientID, &msg)
-	}
+	client := getOrStartClient(clientID)
+	client.SendMessage(&msg)
 }
 
 func reconnect() {
@@ -392,9 +394,19 @@ func cb_Auth(auth *proto.Auth) {
 	log.Println(auth)
 }
 
-func newChatIn(clientID string, msg *proto.Message) {
+func getOrStartClient(clientID string) (client *proto.Socket) {
+	var found bool
+	client, found = clientMap[clientID]
+	if !found {
+		client = newChatIn(clientID)
+	}
+
+	return
+}
+
+func newChatIn(clientID string) (client *proto.Socket) {
 	if len(clientMap) >= *chatLimit {
-		fmt.Printf("Too many open chats! (%d)\nMessage: %v\n\n", len(clientMap), *msg)
+		fmt.Printf("Too many open chats! (%d)\n", len(clientMap))
 		return
 	}
 
@@ -404,6 +416,7 @@ func newChatIn(clientID string, msg *proto.Message) {
 	}
 
 	var sock proto.Socket
+	client = &sock
 	sock.SetMode(proto.ModeMsgpack)
 
 	err = sock.UseFD(fd[0])
@@ -412,10 +425,6 @@ func newChatIn(clientID string, msg *proto.Message) {
 	}
 
 	err = sock.SendHeader()
-	if err != nil {
-		log.Panic(err)
-	}
-	err = sock.SendMessage(msg)
 	if err != nil {
 		log.Panic(err)
 	}
@@ -442,6 +451,8 @@ func newChatIn(clientID string, msg *proto.Message) {
 	clientMap[clientID] = &sock
 
 	setCallbacks(&sock, clientID)
+
+	return
 }
 
 func newChatOut(conn net.Conn) {
@@ -482,7 +493,24 @@ func setCallbacks(sock *proto.Socket, clientID string) {
 		lastClient = sock
 	}, func(cmd *proto.Command) { // cmd
 		log.Println(cmd)
-		//server.SendCommand(cmd)
+		switch cmd.Cmd {
+		case "JOIN":
+			channel := clientID
+			if len(cmd.Payload) > 0 {
+				channel = cmd.Payload[0]
+			}
+			sendIRCCmd(fmt.Sprintf("JOIN %s", channel))
+		case "PART":
+			channel := clientID
+			if len(cmd.Payload) > 0 {
+				channel = cmd.Payload[0]
+			}
+
+			leaveChannel(channel)
+		case "QUIT":
+			sendIRCCmd("QUIT")
+			quit(0)
+		}
 
 		lastClient = sock
 	}, func(txt string) { // text
@@ -530,7 +558,11 @@ func quit(ret int) {
 	fmt.Println("Closing down...")
 	os.Remove(*unixlisten)
 
+	cmd := proto.Command{
+		Cmd: "BYE ",
+	}
 	for _, sock := range clientMap {
+		sock.SendCommand(&cmd)
 		sock.Close()
 	}
 

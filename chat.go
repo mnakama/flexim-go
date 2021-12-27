@@ -177,7 +177,7 @@ func sendEntry() {
 			cmd.Payload = []string{c[1]}
 		}
 
-		switch cmd.Cmd {
+		switch strings.ToLower(cmd.Cmd) {
 		case "nick":
 			cmd.Cmd = "NICK"
 			err := sock.SendCommand(&cmd)
@@ -196,6 +196,17 @@ func sendEntry() {
 			sock.SetSendMode(proto.ModeText)
 		case "roster":
 			cmd.Cmd = "ROSTER"
+			sock.SendCommand(&cmd)
+
+		// IRC commands
+		case "join":
+			cmd.Cmd = "JOIN"
+			sock.SendCommand(&cmd)
+		case "part":
+			cmd.Cmd = "PART"
+			sock.SendCommand(&cmd)
+		case "quit":
+			cmd.Cmd = "QUIT"
 			sock.SendCommand(&cmd)
 		}
 	} else {

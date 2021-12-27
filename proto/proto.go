@@ -175,11 +175,21 @@ func (s *Socket) UseFD(fd int) error {
 }
 
 func (s *Socket) Read(buffer []byte) (int, error) {
-	return s.conn.Read(buffer)
+	conn := s.conn
+	if conn == nil {
+		return 0, io.EOF
+	}
+
+	return conn.Read(buffer)
 }
 
 func (s *Socket) Write(buffer []byte) (int, error) {
-	return s.conn.Write(buffer)
+	conn := s.conn
+	if conn == nil {
+		return 0, io.EOF
+	}
+
+	return conn.Write(buffer)
 }
 
 func (s *Socket) SetCallbacks(message func(*Message), command func(*Command), txt func(string), disconnect func(), status func(*Status), roster func(*Roster), auth func(*Auth)) {
@@ -418,6 +428,7 @@ func (s *Socket) readSocket() {
 
 	for {
 		var err error
+
 		if s.modeRecv == ModeMsgpack {
 			err = s.readMsgpack()
 		} else {
