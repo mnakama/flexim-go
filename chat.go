@@ -42,12 +42,22 @@ func timestamp(t time.Time) string {
 }
 
 func cb_Message(msg *proto.Message) {
+	// called when we receive a message
+
 	if msg.From != "" {
 		peerNick = msg.From
 	}
 
+	var msgTime time.Time
+
+	if msg.Date != 0 {
+		msgTime = time.Unix(msg.Date, 0)
+	} else {
+		msgTime = time.Now()
+	}
+
 	glib.IdleAdd(func() bool {
-		appendMsg(time.Now(), peerNick, msg.Msg)
+		appendMsg(msgTime, msg.From, msg.Msg)
 		return false
 	})
 }
@@ -239,6 +249,7 @@ func chatWindow() {
 		log.Panic(err)
 	}
 	chat.SetEditable(false)
+	chat.SetWrapMode(gtk.WRAP_WORD)
 	chat.Connect("size-allocate", scrollToBottom)
 	chatScroll.Add(chat)
 

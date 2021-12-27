@@ -189,14 +189,14 @@ func processIRCLine(line string) {
 			return
 		}
 
+		clientID := getClientID(source, to)
 		msg := proto.Message{
 			To:   to,
 			From: source,
 			Msg:  text,
 		}
-
-		clientID := getClientID(source, to)
 		sendToClient(clientID, msg)
+
 	} else if verb == "JOIN" {
 		channel := params[0]
 		msg := proto.Message{
