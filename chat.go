@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	//"github.com/gotk3/gotk3/gdk"
 	"github.com/gotk3/gotk3/glib"
 	"github.com/gotk3/gotk3/gtk"
 	"github.com/mnakama/flexim-go/proto"
@@ -38,7 +39,7 @@ var (
 )
 
 func timestamp(t time.Time) string {
-	return t.Format("[15:04:05]")
+	return t.Format("15:04")
 }
 
 func cb_Message(msg *proto.Message) {
@@ -122,6 +123,29 @@ func cb_Command(cmd *proto.Command) {
 
 }
 
+func cb_RoomMemberJoin(member *proto.RoomMemberJoin) {
+	glib.IdleAdd(func() bool {
+		appendMarkup(fmt.Sprintf("<span color=\"brown\">%s joined the channel</span>", *member))
+		return false
+	})
+}
+
+func cb_RoomMemberPart(msg *proto.RoomMemberPart) {
+	glib.IdleAdd(func() bool {
+		var desc string
+		if msg.HasQuit {
+			desc = "has quit"
+		} else {
+			desc = "left the channel"
+		}
+
+		appendMarkup(fmt.Sprintf("<span color=\"brown\">%s %s (%s)</span>",
+			msg.Member, desc, msg.Msg))
+
+		return false
+	})
+}
+
 func scrollToBottom() {
 	adj := chatScroll.GetVAdjustment()
 	page := adj.GetPageSize()
@@ -145,12 +169,46 @@ func appendText(text string) {
 	}
 
 	chatBuffer.Insert(end, str)
+}
 
-	//scrollToBottom()
+func appendMarkup(text string) {
+	end := chatBuffer.GetEndIter()
+
+	var str string
+	if !sentFirstLine {
+		sentFirstLine = true
+		str = text
+	} else {
+		str = "\n" + text
+	}
+
+	chatBuffer.InsertMarkup(end, str)
 }
 
 func appendMsg(t time.Time, who string, msg string) {
-	appendText(fmt.Sprintf("%s %s: %s", timestamp(t), who, msg))
+	end := chatBuffer.GetEndIter()
+
+	text := timestamp(t)
+
+	var str string
+	if !sentFirstLine {
+		sentFirstLine = true
+		str = text
+	} else {
+		str = "\n" + text
+	}
+
+	chatBuffer.InsertMarkup(end, "<tt>"+str+"</tt>  ")
+
+	if idx := strings.Index(who, "!"); idx > -1 {
+		who = who[:idx]
+	}
+
+	end = chatBuffer.GetEndIter()
+	chatBuffer.InsertMarkup(end, "<b>"+who+"</b>  ")
+
+	end = chatBuffer.GetEndIter()
+	chatBuffer.Insert(end, msg)
 }
 
 func sendEntry() {
@@ -229,6 +287,14 @@ func sendEntry() {
 	}
 }
 
+func SetProp(name string, value interface{}) {
+	if _, ok := value.(glib.Object); ok {
+		log.Print("it's an Object")
+	} else {
+		log.Print("it's not an Object")
+	}
+}
+
 func chatWindow() {
 	gtk.Init(nil)
 
@@ -273,6 +339,28 @@ func chatWindow() {
 	if err != nil {
 		log.Panic(err)
 	}
+
+	/*nickTag, err := gtk.TextTagNew("nick")
+	if err != nil {
+		log.Panic(err)
+	}
+
+	var blueRGBA *gdk.RGBA
+	blueRGBA = gdk.NewRGBA(0.3, 0.3, 1, 1)
+	log.Printf("blue: %+V", blueRGBA)*/
+
+	/*prop, err := nickTag.GetProperty("foreground-rgba")
+	if err != nil {
+		log.Panic(err)
+	}
+	log.Printf("prop: %+V", prop)*/
+
+	/*if err := nickTag.SetProperty("foreground-rgba", blueRGBA); err != nil {
+		log.Print(err)
+	}*/
+	/*if err := nickTag.SetProperty("foreground-rgba", blueRGBA.Native()); err != nil {
+		log.Print(err)
+	}*/
 
 	entry.Connect("activate", sendEntry)
 
@@ -351,6 +439,8 @@ func main() {
 	chatWindow()
 
 	sock.SetCallbacks(cb_Message, cb_Command, cb_Text, cb_Disconnect, cb_Status, cb_Roster, cb_Auth)
+	sock.CB_RoomMemberJoin = cb_RoomMemberJoin
+	sock.CB_RoomMemberPart = cb_RoomMemberPart
 
 	gtk.Main()
 }

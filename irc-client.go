@@ -17,6 +17,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"os/exec"
 	"os/signal"
 	"strconv"
 	"strings"
@@ -53,6 +54,15 @@ var (
 	chatLimit = flag.Int("chatlimit", 30, "flood protection: maximum amount of open chats")
 )
 
+// Send a desktop notification.
+//
+// Hopefully I can connect to dbus properly in the future, but for now, we just call out to CLI
+func notify(channel, text string) {
+	c := exec.Command("notify-send", "-t", "30000", channel, text)
+	c.Start()
+	go c.Wait()
+}
+
 func login() (err error) {
 	if !config.UseTLS {
 		irc, err = net.Dial("tcp", config.Address)
@@ -78,6 +88,10 @@ func login() (err error) {
 	go listenServer(irc)
 
 	return
+}
+
+func isChannel(name string) bool {
+	return strings.HasPrefix(name, "#") || strings.HasPrefix(name, "&")
 }
 
 func guessMask() string {
@@ -203,15 +217,17 @@ func processIRCLine(line string) {
 		}
 		sendToClient(clientID, msg)
 
-	} else if verb == "JOIN" {
-		channel := params[0]
-		msg := proto.Message{
-			To:   channel,
-			From: channel,
-			Msg:  fmt.Sprintf("%s has joined the channel", source),
+		if (!isChannel(to)) || strings.Contains(strings.ToLower(text), strings.ToLower(config.Nickname)) {
+			notify(clientID, fmt.Sprintf("<%s> %s", source, text))
 		}
 
-		sendToClient(channel, msg)
+	} else if verb == "JOIN" {
+		channel := params[0]
+
+		client := getOrStartClient(channel)
+		member := proto.RoomMemberJoin(source)
+		client.Send(&member)
+
 	} else if verb == "PART" {
 		channel := params[0]
 		var partMsg string
@@ -219,13 +235,12 @@ func processIRCLine(line string) {
 			partMsg = params[1]
 		}
 
-		msg := proto.Message{
-			To:   channel,
-			From: channel,
-			Msg:  fmt.Sprintf("%s has left the channel (%s)", source, partMsg),
+		client := getOrStartClient(channel)
+		msg := proto.RoomMemberPart{
+			Member: proto.RoomMember(source),
+			Msg:    partMsg,
 		}
-
-		sendToClient(channel, msg)
+		client.Send(&msg)
 	} else if verb == "QUIT" {
 		quitNick := nickFromMask(source)
 		quitMsg := params[0]
@@ -233,12 +248,13 @@ func processIRCLine(line string) {
 		for channelName, c := range channels {
 			for _, member := range c.members {
 				if quitNick == member {
-					msg := proto.Message{
-						To:   channelName,
-						From: channelName,
-						Msg:  fmt.Sprintf("%s has quit (%s)", source, quitMsg),
+					client := getOrStartClient(channelName)
+					msg := proto.RoomMemberPart{
+						Member:  proto.RoomMember(source),
+						Msg:     quitMsg,
+						HasQuit: true,
 					}
-					sendToClient(channelName, msg)
+					client.Send(&msg)
 					break
 				}
 			}
@@ -246,12 +262,12 @@ func processIRCLine(line string) {
 
 		client, found := clientMap[quitNick]
 		if found {
-			msg := proto.Message{
-				To:   source,
-				From: source,
-				Msg:  fmt.Sprintf("%s has quit (%s)", source, quitMsg),
+			msg := proto.RoomMemberPart{
+				Member:  proto.RoomMember(source),
+				Msg:     quitMsg,
+				HasQuit: true,
 			}
-			client.SendMessage(&msg)
+			client.Send(&msg)
 		}
 
 	} else if verb == "332" {
@@ -300,14 +316,28 @@ func processIRCLine(line string) {
 
 		channel := channels[channelName]
 		members := channel.members
-		text := fmt.Sprintf("People in this channel: %s", strings.Join(members, ", "))
+		var text string
+
+		if len(members) > 20 {
+			text = fmt.Sprintf("People in this channel: %d", len(members))
+		} else {
+			text = fmt.Sprintf("People in this channel: %s", strings.Join(members, ", "))
+		}
+
 		msg := proto.Message{
 			To:   to,
 			From: channelName,
 			Msg:  text,
 		}
+		client := getOrStartClient(channelName)
+		client.SendMessage(&msg)
 
-		sendToClient(channelName, msg)
+		memberList := proto.RoomMemberList{
+			Room:    channelName,
+			Members: members,
+		}
+		client.Send(&memberList)
+
 	} else {
 		if lastClient != nil {
 			msg := proto.Message{

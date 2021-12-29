@@ -27,13 +27,16 @@ var (
 
 // Datum Types
 const (
-	DAuth         = 0
-	DAuthResponse = 1
-	DCommand      = 2
-	DMessage      = 3
-	DRoster       = 4
-	DUser         = 5
-	DStatus       = 6
+	DAuth           = 0
+	DAuthResponse   = 1
+	DCommand        = 2
+	DMessage        = 3
+	DRoster         = 4
+	DUser           = 5
+	DStatus         = 6
+	DRoomMemberList = 7
+	DRoomMemberJoin = 8
+	DRoomMemberPart = 9
 )
 
 // Datum structures
@@ -67,6 +70,21 @@ type Status struct {
 
 type Roster []User
 
+type RoomMemberList struct {
+	Room    string   `msgpack:"room"`
+	Members []string `msgpack:"members"`
+}
+
+type RoomMember string
+
+type RoomMemberJoin RoomMember
+
+type RoomMemberPart struct {
+	Member  RoomMember
+	Msg     string
+	HasQuit bool
+}
+
 type User struct {
 	Aliases  []string `msgpack:"aliases"`
 	Key      []byte   `msgpack:"key"`
@@ -74,17 +92,20 @@ type User struct {
 }
 
 type Socket struct {
-	conn          net.Conn
-	gotHeader     bool
-	modeSend      int
-	modeRecv      int
-	cb_Message    func(*Message)
-	cb_Command    func(*Command)
-	cb_Text       func(string)
-	cb_Disconnect func()
-	cb_Status     func(*Status)
-	cb_Roster     func(*Roster)
-	cb_Auth       func(*Auth)
+	conn              net.Conn
+	gotHeader         bool
+	modeSend          int
+	modeRecv          int
+	cb_Message        func(*Message)
+	cb_Command        func(*Command)
+	cb_Text           func(string)
+	cb_Disconnect     func()
+	cb_Status         func(*Status)
+	cb_Roster         func(*Roster)
+	cb_Auth           func(*Auth)
+	CB_RoomMemberList func(*RoomMemberList)
+	CB_RoomMemberJoin func(*RoomMemberJoin)
+	CB_RoomMemberPart func(*RoomMemberPart)
 }
 
 func printMsgpack(data []byte) {
@@ -215,6 +236,14 @@ func (s *Socket) Close() error {
 	return err
 }
 
+func (s *Socket) Send(data interface{}) error {
+	if s.modeSend == ModeText {
+		return errors.New("Not implemented")
+	}
+
+	return s.sendDatum(data)
+}
+
 func (s *Socket) sendDatum(msg interface{}) error {
 	if s == nil || s.conn == nil {
 		return errors.New("Cannot send datum to nil Socket")
@@ -236,10 +265,16 @@ func (s *Socket) sendDatum(msg interface{}) error {
 		dt = DStatus
 	case *Roster:
 		dt = DRoster
+	case *RoomMemberList:
+		dt = DRoomMemberList
+	case *RoomMemberJoin:
+		dt = DRoomMemberJoin
+	case *RoomMemberPart:
+		dt = DRoomMemberPart
 	case *AuthResponse:
 		dt = DAuthResponse
 	default:
-		log.Panicf("Tried to send unknown datum type: %v %t", msg, msg)
+		log.Panicf("Tried to send unknown datum type: %v %T", msg, msg)
 	}
 
 	// make a packet to hold the header+msgpack
@@ -363,7 +398,6 @@ func (s *Socket) SendRoster(roster *Roster) error {
 	} else {
 		return s.sendDatum(roster)
 	}
-
 }
 
 func (s *Socket) SendAuthResponse(resp *AuthResponse) error {
@@ -518,6 +552,48 @@ func (s *Socket) readMsgpack() error {
 		}
 
 		s.cb_Roster(&roster)
+
+	case DRoomMemberList:
+		if s.CB_RoomMemberList == nil {
+			return nil
+		}
+
+		var members RoomMemberList
+
+		err = msgpack.Unmarshal(datum, &members)
+		if err != nil {
+			return err
+		}
+
+		s.CB_RoomMemberList(&members)
+
+	case DRoomMemberJoin:
+		if s.CB_RoomMemberJoin == nil {
+			return nil
+		}
+
+		var member RoomMemberJoin
+
+		err = msgpack.Unmarshal(datum, &member)
+		if err != nil {
+			return err
+		}
+
+		s.CB_RoomMemberJoin(&member)
+
+	case DRoomMemberPart:
+		if s.CB_RoomMemberPart == nil {
+			return nil
+		}
+
+		var member RoomMemberPart
+
+		err = msgpack.Unmarshal(datum, &member)
+		if err != nil {
+			return err
+		}
+
+		s.CB_RoomMemberPart(&member)
 
 	// Not currently handled
 	case DAuth:
