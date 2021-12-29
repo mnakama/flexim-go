@@ -77,6 +77,9 @@ func login() (err error) {
 		return
 	}
 
+	//sendIRCCmd("CAP LS 302")
+	sendIRCCmd("CAP REQ :server-time")
+
 	if config.ServerPassword != "" {
 		// don't echo the password
 		fmt.Println("PASS :********")
@@ -84,6 +87,8 @@ func login() (err error) {
 	}
 	sendIRCCmd(fmt.Sprintf("NICK %s", config.Nickname))
 	sendIRCCmd(fmt.Sprintf("USER %s 0 * :%s", config.Username, config.Realname))
+
+	//sendIRCCmd("CAP END")
 
 	go listenServer(irc)
 
@@ -144,7 +149,7 @@ func sendIRCCmd(cmd string) {
 		return
 	}
 	fmt.Printf("%s\n", cmd)
-	fmt.Fprintf(irc, "%s\n", cmd)
+	fmt.Fprintf(irc, "%s\r\n", cmd)
 }
 
 func processIRCLine(line string) {
@@ -152,18 +157,11 @@ func processIRCLine(line string) {
 	line = strings.TrimSuffix(line, "\r")
 	fmt.Println(line)
 
-	if strings.HasPrefix(line, "PING ") {
-		cmd := fmt.Sprintf("PONG %s", line[5:])
-		sendIRCCmd(cmd)
-
-		return
-	}
-
 	var (
-		//tags   string
-		source string
-		verb   string
-		params []string
+		timestamp time.Time
+		source    string
+		verb      string
+		params    []string
 	)
 
 	{
@@ -171,7 +169,20 @@ func processIRCLine(line string) {
 		fields := strings.Fields(line)
 
 		if strings.HasPrefix(fields[0], "@") {
-			//tags = fields[0][1:]
+			tagStr := fields[0][1:]
+			tagPairs := strings.Split(tagStr, ";")
+			for _, pair := range tagPairs {
+				idx := strings.Index(pair, "=")
+				key := pair[:idx]
+				val := pair[idx+1:]
+
+				if key == "time" {
+					if err := timestamp.UnmarshalText([]byte(val)); err != nil {
+						log.Printf("error parsing timestamp: %s", err)
+					}
+				}
+			}
+
 			fields = fields[1:]
 		}
 
@@ -215,11 +226,18 @@ func processIRCLine(line string) {
 			From: source,
 			Msg:  text,
 		}
+		if !timestamp.IsZero() {
+			msg.Date = timestamp.Unix()
+		}
+
 		sendToClient(clientID, msg)
 
 		if (!isChannel(to)) || strings.Contains(strings.ToLower(text), strings.ToLower(config.Nickname)) {
 			notify(clientID, fmt.Sprintf("<%s> %s", source, text))
 		}
+	} else if verb == "PING" {
+		cmd := fmt.Sprintf("PONG :%s", params[0])
+		sendIRCCmd(cmd)
 
 	} else if verb == "JOIN" {
 		channel := params[0]
@@ -283,6 +301,9 @@ func processIRCLine(line string) {
 			From: channel,
 			Msg:  fmt.Sprintf("Topic: %s", topic),
 		}
+		if !timestamp.IsZero() {
+			msg.Date = timestamp.Unix()
+		}
 		sendToClient(channel, msg)
 	} else if verb == "333" {
 		to := params[0]
@@ -296,6 +317,9 @@ func processIRCLine(line string) {
 			From: channel,
 			Msg: fmt.Sprintf("Topic set by %s on %s",
 				who, when.Format("2006/01/02 15:04 MST")),
+		}
+		if !timestamp.IsZero() {
+			msg.Date = timestamp.Unix()
 		}
 		sendToClient(channel, msg)
 
@@ -329,6 +353,9 @@ func processIRCLine(line string) {
 			From: channelName,
 			Msg:  text,
 		}
+		if !timestamp.IsZero() {
+			msg.Date = timestamp.Unix()
+		}
 		client := getOrStartClient(channelName)
 		client.SendMessage(&msg)
 
@@ -344,6 +371,9 @@ func processIRCLine(line string) {
 				To:   "*",
 				From: source,
 				Msg:  line,
+			}
+			if !timestamp.IsZero() {
+				msg.Date = timestamp.Unix()
 			}
 			lastClient.SendMessage(&msg)
 		}
