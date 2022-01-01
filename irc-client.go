@@ -39,6 +39,7 @@ var config struct {
 	Realname       string
 	Password       string
 	ServerPassword string
+	AutoJoin       []string
 }
 
 var (
@@ -88,7 +89,15 @@ func login() (err error) {
 	sendIRCCmd(fmt.Sprintf("NICK %s", config.Nickname))
 	sendIRCCmd(fmt.Sprintf("USER %s 0 * :%s", config.Username, config.Realname))
 
-	//sendIRCCmd("CAP END")
+	sendIRCCmd("CAP END")
+
+	if config.Password != "" {
+		sendIRCCmd(fmt.Sprintf("PRIVMSG NickServ :IDENTIFY %s", config.Password))
+	}
+
+	for _, channel := range config.AutoJoin {
+		sendIRCCmd(fmt.Sprintf("JOIN %s", channel))
+	}
 
 	go listenServer(irc)
 
