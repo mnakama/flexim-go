@@ -702,6 +702,7 @@ func termInput(server net.Conn) {
 		msg, err := input.ReadString('\n')
 		if err != nil {
 			fmt.Println(err)
+			return
 		}
 
 		fmt.Fprintln(server, msg)
