@@ -389,6 +389,37 @@ func processIRCLine(line string) {
 		}
 		client.Send(&memberList)
 
+	} else if verb == "276" || verb == "311" || verb == "312" || verb == "317" || // whois
+		verb == "318" || verb == "319" || verb == "330" || verb == "378" || verb == "671" { // whois
+		if lastClient == nil {
+			return
+		}
+
+		var text string
+		if len(params) >= 2 {
+			text = strings.Join(params[2:], " | ")
+		}
+		msg := proto.Message{
+			From: source,
+			Msg:  text,
+		}
+		lastClient.Send(&msg)
+
+	} else if verb == "704" || verb == "705" || verb == "706" { // help
+		if lastClient == nil {
+			return
+		}
+
+		var text string
+		if len(params) >= 2 {
+			text = params[2]
+		}
+		msg := proto.Message{
+			From: source,
+			Msg:  text,
+		}
+		lastClient.Send(&msg)
+
 	} else {
 		if lastClient != nil {
 			msg := proto.Message{
@@ -705,7 +736,7 @@ func termInput(server net.Conn) {
 			return
 		}
 
-		fmt.Fprintln(server, msg)
+		fmt.Fprintf(server, "%s\r\n", msg)
 	}
 }
 
