@@ -257,6 +257,27 @@ func sendEntry() {
 			sock.SendCommand(&cmd)
 
 		// IRC commands
+		case "query":
+			cmd.Cmd = "QUERY"
+			sock.SendCommand(&cmd)
+		case "q":
+			cmd.Cmd = "QUERY"
+			sock.SendCommand(&cmd)
+		case "msg":
+			cmd.Cmd = "PRIVMSG"
+			if len(cmd.Payload) <= 0 {
+				appendText("Usage: /msg {target} {message}")
+				return
+			}
+			params := strings.SplitN(cmd.Payload[0], " ", 2)
+			cmd.Payload = params
+			sock.SendCommand(&cmd)
+		case "whois":
+			cmd.Cmd = "WHOIS"
+			sock.SendCommand(&cmd)
+		case "ping":
+			cmd.Cmd = "PING"
+			sock.SendCommand(&cmd)
 		case "join":
 			cmd.Cmd = "JOIN"
 			sock.SendCommand(&cmd)
@@ -266,6 +287,11 @@ func sendEntry() {
 		case "quit":
 			cmd.Cmd = "QUIT"
 			sock.SendCommand(&cmd)
+		case "raw":
+			cmd.Cmd = "RAW"
+			sock.SendCommand(&cmd)
+		default:
+			appendText("Unknown Command")
 		}
 	} else {
 		msg := proto.Message{

@@ -161,6 +161,24 @@ func sendIRCCmd(cmd string) {
 	fmt.Fprintf(irc, "%s\r\n", cmd)
 }
 
+func execPerClientWith(member string, f func(*proto.Socket)) {
+	nick := nickFromMask(member)
+
+	for channelName, c := range channels {
+		for _, member := range c.members {
+			if nick == member {
+				client := getOrStartClient(channelName)
+				f(client)
+				break
+			}
+		}
+	}
+
+	if client, found := clientMap[nick]; found {
+		f(client)
+	}
+}
+
 func processIRCLine(line string) {
 	line = strings.TrimSuffix(line, "\n")
 	line = strings.TrimSuffix(line, "\r")
@@ -241,7 +259,9 @@ func processIRCLine(line string) {
 
 		sendToClient(clientID, msg)
 
-		if (!isChannel(to)) || strings.Contains(strings.ToLower(text), strings.ToLower(config.Nickname)) {
+		// don't notify for ZNC's * names
+		if (!isChannel(to) && !strings.HasPrefix(source, "*")) ||
+			strings.Contains(strings.ToLower(text), strings.ToLower(config.Nickname)) {
 			notify(clientID, fmt.Sprintf("<%s> %s", source, text))
 		}
 	} else if verb == "PING" {
@@ -269,33 +289,28 @@ func processIRCLine(line string) {
 		}
 		client.Send(&msg)
 	} else if verb == "QUIT" {
-		quitNick := nickFromMask(source)
 		quitMsg := params[0]
 
-		for channelName, c := range channels {
-			for _, member := range c.members {
-				if quitNick == member {
-					client := getOrStartClient(channelName)
-					msg := proto.RoomMemberPart{
-						Member:  proto.RoomMember(source),
-						Msg:     quitMsg,
-						HasQuit: true,
-					}
-					client.Send(&msg)
-					break
-				}
-			}
-		}
-
-		client, found := clientMap[quitNick]
-		if found {
+		execPerClientWith(source, func(client *proto.Socket) {
 			msg := proto.RoomMemberPart{
 				Member:  proto.RoomMember(source),
 				Msg:     quitMsg,
 				HasQuit: true,
 			}
 			client.Send(&msg)
-		}
+		})
+
+	} else if verb == "NICK" {
+		oldNick := nickFromMask(source)
+		newNick := params[0]
+
+		execPerClientWith(oldNick, func(client *proto.Socket) {
+			msg := proto.Message{
+				From: source,
+				Msg:  fmt.Sprintf("is now known as %s", newNick),
+			}
+			client.Send(&msg)
+		})
 
 	} else if verb == "332" {
 		to := params[0]
@@ -562,13 +577,51 @@ func setCallbacks(sock *proto.Socket, clientID string) {
 		lastClient = sock
 	}, func(cmd *proto.Command) { // cmd
 		log.Println(cmd)
+
+		lastClient = sock
+
 		switch cmd.Cmd {
+		case "QUERY":
+			var target string
+			if len(cmd.Payload) > 0 {
+				target = cmd.Payload[0]
+			}
+			getOrStartClient(strings.ToLower(target))
+
+		case "PRIVMSG":
+			var target string
+			var msg string
+			if len(cmd.Payload) > 0 {
+				target = cmd.Payload[0]
+			}
+			if len(cmd.Payload) > 1 {
+				msg = cmd.Payload[1]
+			}
+			sendIRCCmd(fmt.Sprintf("PRIVMSG %s :%s", target, msg))
+
+		case "WHOIS":
+			var target string
+			if len(cmd.Payload) > 0 {
+				target = cmd.Payload[0]
+			}
+			sendIRCCmd(fmt.Sprintf("WHOIS %s", target))
+
+		case "PING":
+			var msg string
+			if len(cmd.Payload) > 0 {
+				msg = cmd.Payload[0]
+			} else {
+				msg = "flexim-irc"
+			}
+			sendIRCCmd(fmt.Sprintf("PING :%s", msg))
+
 		case "JOIN":
 			channel := clientID
 			if len(cmd.Payload) > 0 {
 				channel = cmd.Payload[0]
 			}
 			sendIRCCmd(fmt.Sprintf("JOIN %s", channel))
+
 		case "PART":
 			channel := clientID
 			if len(cmd.Payload) > 0 {
@@ -576,12 +629,17 @@ func setCallbacks(sock *proto.Socket, clientID string) {
 			}
 
 			leaveChannel(channel)
+
 		case "QUIT":
 			sendIRCCmd("QUIT")
 			quit(0)
+
+		case "RAW":
+			if len(cmd.Payload) > 0 {
+				sendIRCCmd(cmd.Payload[0])
+			}
 		}
 
-		lastClient = sock
 	}, func(txt string) { // text
 		log.Println(txt)
 
