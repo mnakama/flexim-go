@@ -84,7 +84,7 @@ func login() (err error) {
 	if config.ServerPassword != "" {
 		// don't echo the password
 		fmt.Println("PASS :********")
-		fmt.Fprintf(irc, "PASS :%s\n", config.ServerPassword)
+		fmt.Fprintf(irc, "PASS :%s\r\n", config.ServerPassword)
 	}
 	sendIRCCmd(fmt.Sprintf("NICK %s", config.Nickname))
 	sendIRCCmd(fmt.Sprintf("USER %s 0 * :%s", config.Username, config.Realname))
