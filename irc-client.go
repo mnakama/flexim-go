@@ -40,6 +40,7 @@ var config struct {
 	Password       string
 	ServerPassword string
 	AutoJoin       []string
+	AutoRun        []string
 }
 
 var (
@@ -50,6 +51,7 @@ var (
 	myHostname string
 	tcplisten  = flag.String("tcplisten", "", "bind address for TCP clients")
 	unixlisten = flag.String("listen", "", "bind address for local clients")
+	configFile = flag.String("c", os.ExpandEnv("$HOME/.config/flexim/irc.yaml"), "config file")
 
 	// X.org crashes at about 50+ visible windows with dwm
 	chatLimit = flag.Int("chatlimit", 30, "flood protection: maximum amount of open chats")
@@ -66,7 +68,11 @@ func notify(channel, text string) {
 
 func login() (err error) {
 	if !config.UseTLS {
-		irc, err = net.Dial("tcp", config.Address)
+		if strings.HasPrefix(config.Address, "/") {
+			irc, err = net.Dial("unix", config.Address)
+		} else {
+			irc, err = net.Dial("tcp", config.Address)
+		}
 	} else {
 		tlsConfig := tls.Config{}
 		if config.TLSNoVerify {
@@ -97,6 +103,10 @@ func login() (err error) {
 
 	for _, channel := range config.AutoJoin {
 		sendIRCCmd(fmt.Sprintf("JOIN %s", channel))
+	}
+
+	for _, cmd := range config.AutoRun {
+		sendIRCCmd(cmd)
 	}
 
 	go listenServer(irc)
@@ -136,10 +146,15 @@ func leaveChannel(channel string) {
 }
 
 func getClientID(from, to string) (id string) {
-	if strings.HasPrefix(to, "#") {
+	fromNick := from
+	nickIDX := strings.Index(from, "!")
+	if nickIDX >= 0 {
+		fromNick = from[:nickIDX]
+	}
+
+	if strings.HasPrefix(to, "#") || strings.HasPrefix(to, "&") || fromNick == config.Nickname {
 		id = to
 	} else {
-		nickIDX := strings.Index(from, "!")
 		if nickIDX > 0 {
 			id = from[:nickIDX]
 		} else {
@@ -274,6 +289,21 @@ func processIRCLine(line string) {
 		client := getOrStartClient(channel)
 		member := proto.RoomMemberJoin(source)
 		client.Send(&member)
+
+	} else if verb == "MODE" {
+		target := params[0]
+		modeArgs := params[1:]
+
+		client := lastClient
+		if client == nil || target != config.Nickname {
+			client = getOrStartClient(target)
+		}
+		msg := proto.Message{
+			From: source,
+			Msg:  fmt.Sprintf("MODE %s", strings.Join(modeArgs, " ")),
+		}
+
+		client.Send(&msg)
 
 	} else if verb == "PART" {
 		channel := params[0]
@@ -744,7 +774,7 @@ func main() {
 	flag.Parse()
 
 	// read config
-	yconfig, err := ioutil.ReadFile(os.ExpandEnv("$HOME/.config/flexim/irc.yaml"))
+	yconfig, err := ioutil.ReadFile(*configFile)
 	if err != nil {
 		log.Print(err)
 	} else {
@@ -775,7 +805,7 @@ func main() {
 
 	// listen to a unix socket for clients
 	if *unixlisten == "" {
-		*unixlisten = "/tmp/" + config.Address
+		*unixlisten = "/tmp/" + strings.ReplaceAll(config.Address, "/", "_")
 	}
 
 	os.Remove(*unixlisten)
