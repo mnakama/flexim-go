@@ -757,19 +757,6 @@ func quit(ret int) {
 	os.Exit(ret)
 }
 
-func termInput(server net.Conn) {
-	input := bufio.NewReader(os.Stdin)
-	for {
-		msg, err := input.ReadString('\n')
-		if err != nil {
-			fmt.Println(err)
-			return
-		}
-
-		fmt.Fprintf(server, "%s\r\n", msg)
-	}
-}
-
 func main() {
 	flag.Parse()
 
@@ -790,9 +777,6 @@ func main() {
 	if err := login(); err != nil {
 		log.Fatal(err)
 	}
-
-	// listen to stdin
-	go termInput(irc)
 
 	// maybe listen to a tcp socket for clients
 	if *tcplisten != "" {

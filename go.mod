@@ -5,6 +5,7 @@ go 1.17
 require (
 	github.com/gotk3/gotk3 v0.6.2-0.20211227203914-9ce84f11b1a9
 	github.com/vmihailenco/msgpack v4.0.4+incompatible
+	gopkg.in/guregu/null.v4 v4.0.0
 	gopkg.in/yaml.v2 v2.4.0
 )
 
