@@ -185,20 +185,64 @@ func appendMarkup(text string) {
 	chatBuffer.InsertMarkup(end, str)
 }
 
+func escapeAngles(msg string) string {
+	for {
+		if idx := strings.Index(msg, "<"); idx > -1 {
+			msg = msg[:idx] + "&lt;" + msg[idx+1:]
+		} else {
+			break
+		}
+	}
+	for {
+		if idx := strings.Index(msg, ">"); idx > -1 {
+			msg = msg[:idx] + "&gt;" + msg[idx+1:]
+		} else {
+			break
+		}
+	}
+
+	return msg
+}
+
+func getModeTag(mode rune) string {
+	switch mode {
+	case '\x02':
+		return "b"
+	case '\x1d':
+		return "i"
+	case '\x1f':
+		return "u"
+	case '\x11':
+		return "tt"
+	default:
+		return ""
+	}
+}
+
+func setTag(tag string) (ret string) {
+	ret = "<"+tag+">"
+
+	return
+}
+
+func unsetTag(tag string) (ret string) {
+	ret = "</"+tag+">"
+
+	return
+}
+
 func appendMsg(t time.Time, who string, msg string) {
 	end := chatBuffer.GetEndIter()
 
-	text := timestamp(t)
+	timestampText := "<tt>"+timestamp(t)+"</tt> "
 
-	var str string
 	if !sentFirstLine {
 		sentFirstLine = true
-		str = text
 	} else {
-		str = "\n" + text
+		timestampText = "\n" + timestampText
 	}
 
-	chatBuffer.InsertMarkup(end, "<tt>"+str+"</tt>  ")
+	chatBuffer.InsertMarkup(end, timestampText)
 
 	if idx := strings.Index(who, "!"); idx > -1 {
 		who = who[:idx]
@@ -207,8 +251,63 @@ func appendMsg(t time.Time, who string, msg string) {
 	end = chatBuffer.GetEndIter()
 	chatBuffer.InsertMarkup(end, "<b>"+who+"</b>  ")
 
+	msg = escapeAngles(msg)
+
+	var (
+		modeStatus = make(map[rune]bool)
+		modeStack []rune = make([]rune, 0, 4)
+		redoStack []rune = make([]rune, 0, 4)
+	)
+
+	newMsg := ""
+	for _, rune := range msg {
+		if rune == '\x0f' { // erase all formatting
+			for len(modeStack) > 0 {
+				undoRune := modeStack[len(modeStack)-1]
+				modeStack = modeStack[:len(modeStack)-1]
+				newMsg += unsetTag(getModeTag(undoRune))
+			}
+		} else if rune < '\x20' {
+			tag := getModeTag(rune)
+			if tag == "" {
+				newMsg += string(rune)
+				continue
+			}
+
+			if !modeStatus[rune] {
+				modeStatus[rune] = true
+				newMsg += setTag(tag)
+				modeStack = append(modeStack, rune)
+			} else {
+				modeStatus[rune] = false
+				for {
+					undoRune := modeStack[len(modeStack)-1]
+					newMsg += unsetTag(getModeTag(undoRune))
+					modeStack = modeStack[:len(modeStack)-1]
+					if undoRune != rune {
+						redoStack = append(redoStack, undoRune)
+					} else {
+						for len(redoStack) > 0 {
+							redoRune := redoStack[len(redoStack)-1]
+							newMsg += setTag(getModeTag(redoRune))
+							modeStack = append(modeStack, redoRune)
+							redoStack = redoStack[:len(redoStack)-1]
+						}
+						break
+					}
+				}
+			}
+		} else {
+			newMsg += string(rune)
+		}
+	}
+	for len(modeStack) > 0 {
+		newMsg += unsetTag(getModeTag(modeStack[len(modeStack)-1]))
+		modeStack = modeStack[:len(modeStack)-1]
+	}
+
 	end = chatBuffer.GetEndIter()
-	chatBuffer.Insert(end, msg)
+	chatBuffer.InsertMarkup(end, newMsg)
 }
 
 func sendEntry() {
