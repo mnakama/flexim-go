@@ -12,6 +12,7 @@ import (
 	"io"
 	"log"
 	"net"
+	"net/url"
 	"net/http"
 	"os"
 	"os/exec"
@@ -257,7 +258,7 @@ func connectToDiscord() {
 	}
 	defer func() {
 		err := c.Close()
-		if err {
+		if err != nil {
 			log.Print(err)
 		}
 	}()
