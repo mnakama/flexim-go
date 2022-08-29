@@ -290,7 +290,7 @@ func unsetTag(tag string) (ret string) {
 func appendMsg(t time.Time, who string, msg string) {
 	end := chatBuffer.GetEndIter()
 
-	timestampText := "<tt>"+timestamp(t)+"</tt> "
+	timestampText := "<tt>"+timestamp(t)+" </tt>"
 
 	if !sentFirstLine {
 		sentFirstLine = true
@@ -305,7 +305,7 @@ func appendMsg(t time.Time, who string, msg string) {
 	}
 
 	end = chatBuffer.GetEndIter()
-	chatBuffer.InsertMarkup(end, "<b>"+who+"</b>  ")
+	chatBuffer.InsertMarkup(end, "<b>"+escapeAngles(who)+"</b><tt> </tt>")
 
 	msg = escapeAngles(msg)
 
