@@ -210,6 +210,8 @@ func getModeTag(mode rune) string {
 		return "b"
 	case '\x1d':
 		return "i"
+	case '\x1e':
+		return "s"
 	case '\x1f':
 		return "u"
 	case '\x11':
@@ -301,6 +303,8 @@ func appendMsg(t time.Time, who string, msg string) {
 			newMsg += string(rune)
 		}
 	}
+
+	// clear formatting
 	for len(modeStack) > 0 {
 		newMsg += unsetTag(getModeTag(modeStack[len(modeStack)-1]))
 		modeStack = modeStack[:len(modeStack)-1]
