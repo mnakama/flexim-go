@@ -27,6 +27,7 @@ import (
 
 type Channel struct {
 	members []string
+	endOfNames bool
 }
 
 // User config variables
@@ -388,11 +389,13 @@ func processIRCLine(line string) {
 		// list of users and masks when running /who
 	} else if verb == "315" {
 		// end of /who list
-	} else if verb == "366" {
+	} else if verb == "366" { // end of NAMES
 		to := params[0]
 		channelName := params[1]
 
 		channel := channels[channelName]
+		channel.endOfNames = true
+		channels[channelName] = channel
 		members := channel.members
 		var text string
 
@@ -491,6 +494,12 @@ func addChannelMembers(channel string, members []string) {
 	c, found := channels[channel]
 	if !found {
 		c = Channel{}
+	}
+
+	if c.endOfNames {
+		// true if we're getting a new member list now
+		c.endOfNames = false
+		c.members = []string{}
 	}
 
 	for _, member := range members {
