@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	//"github.com/gotk3/gotk3/gdk"
+	"github.com/gotk3/gotk3/gdk"
 	"github.com/gotk3/gotk3/glib"
 	"github.com/gotk3/gotk3/gtk"
 	"github.com/mnakama/flexim-go/proto"
@@ -488,6 +488,44 @@ func chatWindow() {
 	}*/
 
 	entry.Connect("activate", sendEntry)
+
+	// taken from
+	// https://github.com/jimmykarily/fuzzygui/blob/7ddb72ad712e7afa5bfcb2d06b435b74caeb8140/main.go#L88
+	win.Connect("key-press-event", func(win *gtk.Window, event *gdk.Event) bool {
+		ircMode := func(mode string) {
+			pos := entry.GetPosition()
+			pos = entry.InsertText(mode, pos)
+			entry.SetPosition(pos)
+		}
+
+		keyEvent := gdk.EventKeyNewFromEvent(event)
+		keyval := keyEvent.KeyVal()
+		state := keyEvent.State()
+		if (state & 0x4) != 0 {
+			switch keyval {
+			case gdk.KeyvalFromName("b"):
+				ircMode("\x02")
+				return true
+			case gdk.KeyvalFromName("i"):
+				ircMode("\x1d")
+				return true
+			case gdk.KeyvalFromName("u"):
+				ircMode("\x1f")
+				return true
+			case gdk.KeyvalFromName("m"):
+				ircMode("\x11")
+				return true
+			case gdk.KeyvalFromName("k"):
+				ircMode("\x03")
+				return true
+			case gdk.KeyvalFromName("o"):
+				ircMode("\x0f")
+				return true
+			}
+		}
+
+		return false
+	})
 
 	box.PackStart(chatScroll, true, true, 1)
 	box.PackStart(entry, false, false, 1)
