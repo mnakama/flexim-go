@@ -1,5 +1,114 @@
 package irc_style
 
+var colorCodes = []string{
+	"white", // 0
+	"black",
+	"blue",
+	"green",
+	"red",
+	"brown",
+	"magenta",
+	"orange",
+	"yellow",
+	"light green",
+	"cyan",
+	"light cyan",
+	"light blue",
+	"ping",
+	"grey",
+	"light grey", // 15
+
+	"#470000", // 16
+	"#472100",
+	"#474700",
+	"#324700",
+	"#004700",
+	"#00472c",
+	"#004747",
+	"#002747",
+	"#000047",
+	"#2e0047",
+	"#470047",
+	"#47002a", // 27
+
+	"#740000", // 28
+	"#743a00",
+	"#747400",
+	"#517400",
+	"#007400",
+	"#007449",
+	"#007474",
+	"#004074",
+	"#000074",
+	"#4b0074",
+	"#740074",
+	"#740045", // 39
+
+	"#b50000", // 40
+	"#b56300",
+	"#b5b500",
+	"#7db500",
+	"#00b500",
+	"#00b571",
+	"#00b5b5",
+	"#0063b5",
+	"#0000b5",
+	"#7500b5",
+	"#b500b5",
+	"#b5006b", // 51
+
+	"#ff0000", // 52
+	"#ff8c00",
+	"#ffff00",
+	"#b2ff00",
+	"#00ff00",
+	"#00ffa8",
+	"#00ffff",
+	"#008cff",
+	"#0000ff",
+	"#a500ff",
+	"#ff00ff",
+	"#ff0098", // 63
+
+	"#ff5959", // 64
+	"#ffb459",
+	"#ffff71",
+	"#cfff60",
+	"#6fff6f",
+	"#65ffc9",
+	"#6dffff",
+	"#59b4ff",
+	"#5959ff",
+	"#c459ff",
+	"#ff66ff",
+	"#ff59bc", // 75
+
+	"#ff9c9c", // 76
+	"#ffd39c",
+	"#ffff9c",
+	"#e2ff9c",
+	"#9cff9c",
+	"#9cffdb",
+	"#9cffff",
+	"#9cd3ff",
+	"#9c9cff",
+	"#dc9cff",
+	"#ff9cff",
+	"#ff94d3", // 87
+
+	"#000000", // 88
+	"#131313",
+	"#282828",
+	"#363636",
+	"#4d4d4d",
+	"#656565",
+	"#818181",
+	"#9f9f9f",
+	"#bcbcbc",
+	"#e2e2e2",
+	"#ffffff", // 98
+}
+
 func getModeTag(mode rune) string {
 	switch mode {
 	case '\x02':
@@ -19,43 +128,11 @@ func getModeTag(mode rune) string {
 	}
 }
 
-func colorVal(color int) (ret string) {
-	switch color {
-	case 0:
-		return "white"
-	case 1:
-		return "black"
-	case 2:
-		return "blue"
-	case 3:
-		return "green"
-	case 4:
-		return "red"
-	case 5:
-		return "brown"
-	case 6:
-		return "magenta"
-	case 7:
-		return "orange"
-	case 8:
-		return "yellow"
-	case 9:
-		return "light green"
-	case 10:
-		return "cyan"
-	case 11:
-		return "light cyan"
-	case 12:
-		return "light blue"
-	case 13:
-		return "pink"
-	case 14:
+func colorVal(color int) string {
+	if color < 0 || (color > len(colorCodes)-1) {
 		return "grey"
-	case 15:
-		return "light grey"
 	}
-
-	return "white"
+	return colorCodes[color]
 }
 
 func setColorTag(fg, bg int) (ret string) {
