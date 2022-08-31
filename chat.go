@@ -243,94 +243,106 @@ func sendEntry() {
 	}
 
 	if entryText[0] == '/' {
-		appendText(entryText)
-
-		entry.SetText("")
-		c := strings.SplitN(entryText[1:], " ", 2)
-
-		cmd := proto.Command{
-			Cmd: c[0],
-		}
-
-		if len(c) > 1 {
-			cmd.Payload = []string{c[1]}
-		}
-
-		switch strings.ToLower(cmd.Cmd) {
-		case "nick":
-			cmd.Cmd = "NICK"
-			err := sock.SendCommand(&cmd)
-			if err != nil {
-				log.Panic(err)
-			}
-		case "bye":
-			cmd.Cmd = "BYE "
-			err := sock.SendCommand(&cmd)
-			if err != nil {
-				log.Panic(err)
-			}
-		case "msgpack":
-			sock.SetSendMode(proto.ModeMsgpack)
-		case "text":
-			sock.SetSendMode(proto.ModeText)
-		case "roster":
-			cmd.Cmd = "ROSTER"
-			sock.SendCommand(&cmd)
-
-		// IRC commands
-		case "query":
-			cmd.Cmd = "QUERY"
-			sock.SendCommand(&cmd)
-		case "q":
-			cmd.Cmd = "QUERY"
-			sock.SendCommand(&cmd)
-		case "msg":
-			cmd.Cmd = "PRIVMSG"
-			if len(cmd.Payload) <= 0 {
-				appendText("Usage: /msg {target} {message}")
-				return
-			}
-			params := strings.SplitN(cmd.Payload[0], " ", 2)
-			cmd.Payload = params
-			sock.SendCommand(&cmd)
-		case "whois":
-			cmd.Cmd = "WHOIS"
-			sock.SendCommand(&cmd)
-		case "ping":
-			cmd.Cmd = "PING"
-			sock.SendCommand(&cmd)
-		case "join":
-			cmd.Cmd = "JOIN"
-			sock.SendCommand(&cmd)
-		case "part":
-			cmd.Cmd = "PART"
-			sock.SendCommand(&cmd)
-		case "quit":
-			cmd.Cmd = "QUIT"
-			sock.SendCommand(&cmd)
-		case "raw":
-			cmd.Cmd = "RAW"
-			sock.SendCommand(&cmd)
-		default:
-			appendText("Unknown Command")
+		if strings.HasPrefix(entryText, "//") {
+			// double / to send a message starting with a literal /
+			sendMessage(entryText[1:])
+		} else {
+			sendCommand(entryText[1:])
 		}
 	} else {
-		msg := proto.Message{
-			To:    *peerName,
-			From:  config.Nickname,
-			Flags: []string{},
-			Date:  time.Now().Unix(),
-			Msg:   entryText,
-		}
+		sendMessage(entryText)
+	}
+}
 
-		err := sock.SendMessage(&msg)
+func sendCommand(cmdText string) {
+	appendText("/" + cmdText)
+	entry.SetText("")
+	c := strings.SplitN(cmdText, " ", 2)
+
+	cmd := proto.Command{
+		Cmd: c[0],
+	}
+
+	if len(c) > 1 {
+		cmd.Payload = []string{c[1]}
+	}
+
+	switch strings.ToLower(cmd.Cmd) {
+	case "nick":
+		cmd.Cmd = "NICK"
+		err := sock.SendCommand(&cmd)
 		if err != nil {
-			log.Print(err)
-			appendText(err.Error())
-		} else {
-			appendMsg(time.Now(), config.Nickname, entryText)
-			entry.SetText("")
+			log.Panic(err)
 		}
+	case "bye":
+		cmd.Cmd = "BYE "
+		err := sock.SendCommand(&cmd)
+		if err != nil {
+			log.Panic(err)
+		}
+	case "msgpack":
+		sock.SetSendMode(proto.ModeMsgpack)
+	case "text":
+		sock.SetSendMode(proto.ModeText)
+	case "roster":
+		cmd.Cmd = "ROSTER"
+		sock.SendCommand(&cmd)
+
+	// IRC commands
+	case "query":
+		cmd.Cmd = "QUERY"
+		sock.SendCommand(&cmd)
+	case "q":
+		cmd.Cmd = "QUERY"
+		sock.SendCommand(&cmd)
+	case "msg":
+		cmd.Cmd = "PRIVMSG"
+		if len(cmd.Payload) <= 0 {
+			appendText("Usage: /msg {target} {message}")
+			return
+		}
+		params := strings.SplitN(cmd.Payload[0], " ", 2)
+		cmd.Payload = params
+		sock.SendCommand(&cmd)
+	case "whois":
+		cmd.Cmd = "WHOIS"
+		sock.SendCommand(&cmd)
+	case "ping":
+		cmd.Cmd = "PING"
+		sock.SendCommand(&cmd)
+	case "join":
+		cmd.Cmd = "JOIN"
+		sock.SendCommand(&cmd)
+	case "part":
+		cmd.Cmd = "PART"
+		sock.SendCommand(&cmd)
+	case "quit":
+		cmd.Cmd = "QUIT"
+		sock.SendCommand(&cmd)
+	case "raw":
+		cmd.Cmd = "RAW"
+		sock.SendCommand(&cmd)
+	default:
+		appendText("Unknown Command")
+	}
+}
+
+func sendMessage(msgText string) {
+	msg := proto.Message{
+		To:    *peerName,
+		From:  config.Nickname,
+		Flags: []string{},
+		Date:  time.Now().Unix(),
+		Msg:   msgText,
+	}
+
+	err := sock.SendMessage(&msg)
+	if err != nil {
+		log.Print(err)
+		appendText(err.Error())
+	} else {
+		appendMsg(time.Now(), config.Nickname, msgText)
+		entry.SetText("")
 	}
 }
 
