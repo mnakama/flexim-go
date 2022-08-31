@@ -671,6 +671,9 @@ func chatWindow() {
 			case gdk.KeyvalFromName("o"):
 				ircMode("\x0f")
 				return true
+			case gdk.KeyvalFromName("s"):
+				ircMode("\x1e")
+				return true
 			}
 		}
 
