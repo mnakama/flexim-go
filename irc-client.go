@@ -389,6 +389,11 @@ func processIRCLine(line string) {
 		// list of users and masks when running /who
 	} else if verb == "315" {
 		// end of /who list
+		channelName := params[1]
+
+		channel := channels[channelName]
+		channel.endOfNames = true
+		channels[channelName] = channel
 	} else if verb == "366" { // end of NAMES
 		to := params[0]
 		channelName := params[1]
