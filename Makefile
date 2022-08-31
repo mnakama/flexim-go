@@ -3,7 +3,7 @@ BUILD = go build
 .PHONY : all
 all : flexim-chat flexim-listener flexim-client irc-client discord-client
 
-flexim-chat : chat.go proto/proto.go
+flexim-chat : chat.go pkg/irc-style/irc-style.go proto/proto.go
 	$(BUILD) -o flexim-chat chat.go
 
 flexim-listener : listener.go

@@ -26,7 +26,7 @@ import (
 )
 
 type Channel struct {
-	members []string
+	members    []string
 	endOfNames bool
 }
 
