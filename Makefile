@@ -1,7 +1,7 @@
 BUILD = go build
 
 .PHONY : all
-all : flexim-chat flexim-listener flexim-client irc-client discord-client
+all : flexim-listener flexim-client irc-client discord-client flexim-chat
 
 flexim-chat : chat.go pkg/irc-style/irc-style.go proto/proto.go
 	$(BUILD) -o flexim-chat chat.go
@@ -20,4 +20,4 @@ discord-client : pkg/discord-client/main.go proto/proto.go
 
 .PHONY : clean
 clean :
-	rm flexim-chat flexim-listener flexim-client irc-client
+	rm flexim-chat flexim-listener flexim-client irc-client discord-client
