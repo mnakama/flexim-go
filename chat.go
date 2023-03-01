@@ -186,21 +186,10 @@ func appendMarkup(text string) {
 	chatBuffer.InsertMarkup(end, str)
 }
 
-func escapeAngles(msg string) string {
-	for {
-		if idx := strings.Index(msg, "<"); idx > -1 {
-			msg = msg[:idx] + "&lt;" + msg[idx+1:]
-		} else {
-			break
-		}
-	}
-	for {
-		if idx := strings.Index(msg, ">"); idx > -1 {
-			msg = msg[:idx] + "&gt;" + msg[idx+1:]
-		} else {
-			break
-		}
-	}
+func escapePango(msg string) string {
+	msg = strings.ReplaceAll(msg, "&", "&amp;")
+	msg = strings.ReplaceAll(msg, "<", "&lt;")
+	msg = strings.ReplaceAll(msg, ">", "&gt;")
 
 	return msg
 }
@@ -223,9 +212,9 @@ func appendMsg(t time.Time, who string, msg string) {
 	}
 
 	end = chatBuffer.GetEndIter()
-	chatBuffer.InsertMarkup(end, "<b>"+escapeAngles(who)+"</b><tt> </tt>")
+	chatBuffer.InsertMarkup(end, "<b>"+escapePango(who)+"</b><tt> </tt>")
 
-	msg = escapeAngles(msg)
+	msg = escapePango(msg)
 	msg = ircStyle.IRCToPango(msg)
 
 	end = chatBuffer.GetEndIter()
