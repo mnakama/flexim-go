@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"github.com/mnakama/flexim-go/proto"
 	"gopkg.in/yaml.v2"
-	"io"
 	"io/ioutil"
 	"log"
 	"net"
@@ -67,6 +66,32 @@ func notify(channel, text string) {
 	go c.Wait()
 }
 
+func connectToServer(cErr chan error) {
+	err := login()
+	if err != nil {
+		cErr <- err
+		return
+	}
+	close(cErr)
+
+	listenServer(irc)
+
+	backoff := time.Second
+	for {
+		time.Sleep(time.Second)
+		if err := login(); err != nil {
+			log.Println(err)
+			time.Sleep(backoff)
+			if backoff < (time.Minute * 10) {
+				backoff += time.Second
+			}
+		} else {
+			backoff = time.Second
+			listenServer(irc)
+		}
+	}
+}
+
 func login() (err error) {
 	if !config.UseTLS {
 		if strings.HasPrefix(config.Address, "/") {
@@ -109,8 +134,6 @@ func login() (err error) {
 	for _, cmd := range config.AutoRun {
 		sendIRCCmd(cmd)
 	}
-
-	go listenServer(irc)
 
 	return
 }
@@ -480,11 +503,12 @@ func listenServer(irc net.Conn) {
 	for {
 		line, err := reader.ReadString('\n')
 		if err != nil {
-			log.Print(err)
-			if err == io.EOF {
-				quit(0)
+			log.Printf("IRC read error: %s", err)
+			if strings.Contains(err.Error(), "connection reset by peer") {
+				return
+			} else {
+				quit(1)
 			}
-			return
 		}
 
 		if len(line) < 1 {
@@ -528,17 +552,6 @@ func nickFromMask(mask string) string {
 func sendToClient(clientID string, msg proto.Message) {
 	client := getOrStartClient(clientID)
 	client.SendMessage(&msg)
-}
-
-func reconnect() {
-	for {
-		time.Sleep(time.Second)
-		if err := login(); err != nil {
-			log.Println(err)
-		} else {
-			return
-		}
-	}
 }
 
 func cb_Status(status *proto.Status) {
@@ -788,7 +801,9 @@ func main() {
 	fmt.Println(config)
 
 	// connect
-	if err := login(); err != nil {
+	c := make(chan error)
+	go connectToServer(c)
+	if err := <-c; err != nil {
 		log.Fatal(err)
 	}
 
