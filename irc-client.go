@@ -784,9 +784,7 @@ func quit(ret int) {
 	os.Exit(ret)
 }
 
-func main() {
-	flag.Parse()
-
+func loadConfig() {
 	// read config
 	yconfig, err := ioutil.ReadFile(*configFile)
 	if err != nil {
@@ -799,6 +797,12 @@ func main() {
 	}
 
 	fmt.Println(config)
+}
+
+func main() {
+	flag.Parse()
+
+	loadConfig()
 
 	// connect
 	c := make(chan error)
