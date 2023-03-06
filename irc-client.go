@@ -318,10 +318,15 @@ func processIRCLine(line string) {
 		target := params[0]
 		modeArgs := params[1:]
 
-		client := lastClient
-		if client == nil || target != config.Nickname {
+		var client *proto.Socket
+		if target != config.Nickname {
 			client = getOrStartClient(target)
+		} else if lastClient != nil {
+			client = lastClient
+		} else {
+			return
 		}
+
 		msg := proto.Message{
 			From: source,
 			Msg:  fmt.Sprintf("MODE %s", strings.Join(modeArgs, " ")),
