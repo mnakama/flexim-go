@@ -10,13 +10,13 @@ import (
 	"crypto/tls"
 	"flag"
 	"fmt"
+	"github.com/gen2brain/beeep"
 	"github.com/mnakama/flexim-go/proto"
 	"gopkg.in/yaml.v2"
 	"io/ioutil"
 	"log"
 	"net"
 	"os"
-	"os/exec"
 	"os/signal"
 	"strconv"
 	"strings"
@@ -58,12 +58,10 @@ var (
 )
 
 // Send a desktop notification.
-//
-// Hopefully I can connect to dbus properly in the future, but for now, we just call out to CLI
 func notify(channel, text string) {
-	c := exec.Command("notify-send", "-t", "30000", channel, text)
-	c.Start()
-	go c.Wait()
+	if err := beeep.Notify(channel, text, ""); err != nil {
+		log.Printf("failed to send desktop notification: %s", err)
+	}
 }
 
 func connectToServer(cErr chan error) {
