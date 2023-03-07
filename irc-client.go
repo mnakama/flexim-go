@@ -10,6 +10,7 @@ import (
 	"crypto/tls"
 	"flag"
 	"fmt"
+	"github.com/adrg/xdg"
 	"github.com/gen2brain/beeep"
 	"github.com/mnakama/flexim-go/proto"
 	"gopkg.in/yaml.v2"
@@ -51,7 +52,7 @@ var (
 	myHostname string
 	tcplisten  = flag.String("tcplisten", "", "bind address for TCP clients")
 	unixlisten = flag.String("listen", "", "bind address for local clients")
-	configFile = flag.String("c", os.ExpandEnv("$HOME/.config/flexim/irc.yaml"), "config file")
+	configFile = flag.String("c", xdg.ConfigHome+"/flexim/irc.yaml", "config file")
 
 	// X.org crashes at about 50+ visible windows with dwm
 	chatLimit = flag.Int("chatlimit", 30, "flood protection: maximum amount of open chats")
@@ -825,7 +826,11 @@ func main() {
 
 	// listen to a unix socket for clients
 	if *unixlisten == "" {
-		*unixlisten = "/tmp/" + strings.ReplaceAll(config.Address, "/", "_")
+		var err error
+		*unixlisten, err = xdg.RuntimeFile("flexim/" + strings.ReplaceAll(config.Address, "/", "_"))
+		if err != nil {
+			log.Fatal(err)
+		}
 	}
 
 	os.Remove(*unixlisten)

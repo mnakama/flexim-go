@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/adrg/xdg"
 	"github.com/gotk3/gotk3/gdk"
 	"github.com/gotk3/gotk3/glib"
 	"github.com/gotk3/gotk3/gtk"
@@ -467,7 +468,7 @@ func main() {
 
 	flag.Parse()
 
-	yconfig, err := ioutil.ReadFile(os.ExpandEnv("$HOME/test.yaml"))
+	yconfig, err := ioutil.ReadFile(xdg.ConfigHome + "/flexim/chat.yaml")
 	if err != nil {
 		log.Print(err)
 	} else {

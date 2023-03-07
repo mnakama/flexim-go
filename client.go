@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"flag"
 	"fmt"
+	"github.com/adrg/xdg"
 	"github.com/mnakama/flexim-go/proto"
 	"gopkg.in/yaml.v2"
 	"io/ioutil"
@@ -16,6 +17,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -275,7 +277,7 @@ func quit(ret int) {
 func main() {
 	flag.Parse()
 
-	yconfig, err := ioutil.ReadFile(os.ExpandEnv("$HOME/test.yaml"))
+	yconfig, err := ioutil.ReadFile(xdg.ConfigHome + "/flexim/chat.yaml")
 	if err != nil {
 		log.Print(err)
 	} else {
@@ -304,8 +306,13 @@ func main() {
 		go listenLoop(ln)
 	}
 
+	// listen to a unix socket for clients
 	if *unixlisten == "" {
-		*unixlisten = "/tmp/" + *serverAddress
+		var err error
+		*unixlisten, err = xdg.RuntimeFile("flexim/" + strings.ReplaceAll(*serverAddress, "/", "_"))
+		if err != nil {
+			log.Fatal(err)
+		}
 	}
 
 	os.Remove(*unixlisten)
