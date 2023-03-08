@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -16,7 +17,10 @@ import (
 	ircStyle "github.com/mnakama/flexim-go/pkg/irc-style"
 	"github.com/mnakama/flexim-go/proto"
 	"gopkg.in/yaml.v2"
+	"mvdan.cc/xurls/v2"
 )
+
+type tagAttrs map[string]interface{}
 
 const defaultPeerNick = "them" // Used if we do not have chat partner's nick
 
@@ -38,6 +42,12 @@ var (
 	chatBuffer *gtk.TextBuffer
 	chatScroll *gtk.ScrolledWindow
 	entry      *gtk.Entry
+
+	tagNick *gtk.TextTag
+	tagMono *gtk.TextTag
+	tagURL  *gtk.TextTag
+	tagJoin *gtk.TextTag
+	tagPart *gtk.TextTag
 )
 
 func timestamp(t time.Time) string {
@@ -127,7 +137,7 @@ func cb_Command(cmd *proto.Command) {
 
 func cb_RoomMemberJoin(member *proto.RoomMemberJoin) {
 	glib.IdleAdd(func() bool {
-		appendMarkup(fmt.Sprintf("<span color=\"brown\">%s joined the channel</span>", *member))
+		appendWithTag(fmt.Sprintf("%s joined the channel", *member), tagJoin)
 		return false
 	})
 }
@@ -141,8 +151,8 @@ func cb_RoomMemberPart(msg *proto.RoomMemberPart) {
 			desc = "left the channel"
 		}
 
-		appendMarkup(fmt.Sprintf("<span color=\"brown\">%s %s (%s)</span>",
-			msg.Member, desc, msg.Msg))
+		appendWithTag(fmt.Sprintf("%s %s (%s)",
+			msg.Member, desc, msg.Msg), tagPart)
 
 		return false
 	})
@@ -173,7 +183,7 @@ func appendText(text string) {
 	chatBuffer.Insert(end, str)
 }
 
-func appendMarkup(text string) {
+func appendWithTag(text string, tag *gtk.TextTag) {
 	end := chatBuffer.GetEndIter()
 
 	var str string
@@ -184,7 +194,7 @@ func appendMarkup(text string) {
 		str = "\n" + text
 	}
 
-	chatBuffer.InsertMarkup(end, str)
+	chatBuffer.InsertWithTag(end, str, tag)
 }
 
 func escapePango(msg string) string {
@@ -198,7 +208,7 @@ func escapePango(msg string) string {
 func appendMsg(t time.Time, who string, msg string) {
 	end := chatBuffer.GetEndIter()
 
-	timestampText := "<tt>" + timestamp(t) + " </tt>"
+	timestampText := timestamp(t) + " "
 
 	if !sentFirstLine {
 		sentFirstLine = true
@@ -206,20 +216,33 @@ func appendMsg(t time.Time, who string, msg string) {
 		timestampText = "\n" + timestampText
 	}
 
-	chatBuffer.InsertMarkup(end, timestampText)
+	chatBuffer.InsertWithTag(end, timestampText, tagMono)
 
 	if idx := strings.Index(who, "!"); idx > -1 {
 		who = who[:idx]
 	}
 
 	end = chatBuffer.GetEndIter()
-	chatBuffer.InsertMarkup(end, "<b>"+escapePango(who)+"</b><tt> </tt>")
+	chatBuffer.InsertWithTag(end, who, tagNick)
+	chatBuffer.InsertWithTag(end, " ", tagMono)
 
-	msg = escapePango(msg)
-	msg = ircStyle.IRCToPango(msg)
+	urlSearch := xurls.Relaxed()
+	indices := urlSearch.FindAllStringIndex(msg, -1)
+	if indices != nil {
+		slice := indices[0]
+		chatBuffer.InsertMarkup(end, ircStyle.IRCToPango(escapePango(msg[0:slice[0]])))
 
-	end = chatBuffer.GetEndIter()
-	chatBuffer.InsertMarkup(end, msg)
+		for _, slice = range indices {
+			url := msg[slice[0]:slice[1]]
+			chatBuffer.InsertWithTag(end, url, tagURL)
+		}
+
+		chatBuffer.InsertMarkup(end, ircStyle.IRCToPango(escapePango(msg[slice[1]:len(msg)])))
+	} else {
+		msg = escapePango(msg)
+		msg = ircStyle.IRCToPango(msg)
+		chatBuffer.InsertMarkup(end, msg)
+	}
 }
 
 func sendEntry() {
@@ -383,6 +406,37 @@ func chatWindow() {
 	if err != nil {
 		log.Panic(err)
 	}
+
+	tagNick = chatBuffer.CreateTag("", tagAttrs{"weight": 600})
+	tagMono = chatBuffer.CreateTag("", tagAttrs{"family": "Monospace"})
+	tagJoin = chatBuffer.CreateTag("", tagAttrs{"foreground": "brown"})
+	tagPart = tagJoin
+
+	tagURL = chatBuffer.CreateTag("", tagAttrs{"foreground": "#88F"})
+	tagURL.Connect("event", func(tag *gtk.TextTag, view *gtk.TextView, ev *gdk.Event, iter *gtk.TextIter) bool {
+		// all kinds of different events come in here, but a button event with Button() == 0
+		// means it's not a button event.
+		bEvent := gdk.EventButtonNewFromEvent(ev)
+		if bEvent.Button() != 1 || bEvent.State() != 0 {
+			return false
+		}
+
+		// copy the iterator, then use it to extract the URL's text
+		iterEnd := *iter
+		if !iter.TogglesTag(tagURL) {
+			iter.BackwardToTagToggle(tagURL)
+		}
+		iterEnd.ForwardToTagToggle(tagURL)
+
+		url := iter.GetText(&iterEnd)
+		fmt.Printf("Opening %s via xdg-open\n", url)
+
+		c := exec.Command("xdg-open", url)
+		c.Start()
+		go c.Wait()
+
+		return true
+	})
 
 	entry, err = gtk.EntryNew()
 	if err != nil {

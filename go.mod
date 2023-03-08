@@ -10,6 +10,7 @@ require (
 	github.com/vmihailenco/msgpack v4.0.4+incompatible
 	gopkg.in/guregu/null.v4 v4.0.0
 	gopkg.in/yaml.v2 v2.4.0
+	mvdan.cc/xurls/v2 v2.4.0
 )
 
 require (
