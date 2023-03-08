@@ -659,12 +659,17 @@ func setCallbacks(sock *proto.Socket, clientID string) {
 		// the maximum command length needs to account for what the IRC server will send
 		// to other clients. Full host mask, plus : and a space before PRIVMSG starts
 		cmdLen := maxIRCLen - getMaskLen() - 2
-		ircCmd := fmt.Sprintf("PRIVMSG %s :%s", msg.To, msg.Msg)
-		for len(ircCmd) > cmdLen {
-			sendIRCCmd(ircCmd[:cmdLen])
-			ircCmd = fmt.Sprintf("PRIVMSG %s :%s", msg.To, ircCmd[cmdLen:])
+
+		msgTrimmed := strings.Trim(msg.Msg, "\n\r")
+		msgLines := strings.Split(msgTrimmed, "\n")
+		for _, msgLine := range msgLines {
+			ircCmd := fmt.Sprintf("PRIVMSG %s :%s", msg.To, msgLine)
+			for len(ircCmd) > cmdLen {
+				sendIRCCmd(ircCmd[:cmdLen])
+				ircCmd = fmt.Sprintf("PRIVMSG %s :%s", msg.To, ircCmd[cmdLen:])
+			}
+			sendIRCCmd(ircCmd)
 		}
-		sendIRCCmd(ircCmd)
 
 		lastClient = sock
 	}, func(cmd *proto.Command) { // cmd
