@@ -367,6 +367,31 @@ func SetProp(name string, value interface{}) {
 	}
 }
 
+func urlEvent(tag *gtk.TextTag, view *gtk.TextView, ev *gdk.Event, iter *gtk.TextIter) bool {
+	// all kinds of different events come in here, but a button event with Button() == 0
+	// means it's not a button event.
+	bEvent := gdk.EventButtonNewFromEvent(ev)
+	if bEvent.Type() != gdk.EVENT_BUTTON_PRESS || bEvent.Button() != 1 {
+		return false
+	}
+
+	// copy the iterator, then use it to extract the URL's text
+	iterEnd := *iter
+	if !iter.TogglesTag(tagURL) {
+		iter.BackwardToTagToggle(tagURL)
+	}
+	iterEnd.ForwardToTagToggle(tagURL)
+
+	url := iter.GetText(&iterEnd)
+	fmt.Printf("Opening %s via xdg-open\n", url)
+
+	c := exec.Command("xdg-open", url)
+	c.Start()
+	go c.Wait()
+
+	return true
+}
+
 func chatWindow() {
 	gtk.Init(nil)
 
@@ -413,30 +438,7 @@ func chatWindow() {
 	tagPart = tagJoin
 
 	tagURL = chatBuffer.CreateTag("", tagAttrs{"foreground": "#88F"})
-	tagURL.Connect("event", func(tag *gtk.TextTag, view *gtk.TextView, ev *gdk.Event, iter *gtk.TextIter) bool {
-		// all kinds of different events come in here, but a button event with Button() == 0
-		// means it's not a button event.
-		bEvent := gdk.EventButtonNewFromEvent(ev)
-		if bEvent.Button() != 1 || bEvent.State() != 0 {
-			return false
-		}
-
-		// copy the iterator, then use it to extract the URL's text
-		iterEnd := *iter
-		if !iter.TogglesTag(tagURL) {
-			iter.BackwardToTagToggle(tagURL)
-		}
-		iterEnd.ForwardToTagToggle(tagURL)
-
-		url := iter.GetText(&iterEnd)
-		fmt.Printf("Opening %s via xdg-open\n", url)
-
-		c := exec.Command("xdg-open", url)
-		c.Start()
-		go c.Wait()
-
-		return true
-	})
+	tagURL.Connect("event", urlEvent)
 
 	entry, err = gtk.EntryNew()
 	if err != nil {
