@@ -38,6 +38,8 @@ var (
 	peerName      = flag.String("to", "", "Name of chat partner")
 	unixAddress   = flag.String("unix", "", "Unix socket address to connect")
 
+	display *gdk.Display
+
 	chat       *gtk.TextView
 	chatBuffer *gtk.TextBuffer
 	chatScroll *gtk.ScrolledWindow
@@ -48,6 +50,11 @@ var (
 	tagURL  *gtk.TextTag
 	tagJoin *gtk.TextTag
 	tagPart *gtk.TextTag
+
+	cursorPointer *gdk.Cursor
+	cursorText    *gdk.Cursor
+
+	winMain *gtk.Window
 )
 
 func timestamp(t time.Time) string {
@@ -371,6 +378,18 @@ func urlEvent(tag *gtk.TextTag, view *gtk.TextView, ev *gdk.Event, iter *gtk.Tex
 	// all kinds of different events come in here, but a button event with Button() == 0
 	// means it's not a button event.
 	bEvent := gdk.EventButtonNewFromEvent(ev)
+	if bEvent.Type() == gdk.EVENT_MOTION_NOTIFY {
+		log.Print("url motion event")
+
+		//win := view.GetWindow(gtk.TEXT_WINDOW_TEXT)
+		win, err := winMain.GetWindow()
+		if err != nil {
+			fmt.Println(err)
+		}
+		win.SetCursor(cursorPointer)
+		return false
+	}
+
 	if bEvent.Type() != gdk.EVENT_BUTTON_PRESS || bEvent.Button() != 1 {
 		return false
 	}
@@ -392,13 +411,30 @@ func urlEvent(tag *gtk.TextTag, view *gtk.TextView, ev *gdk.Event, iter *gtk.Tex
 	return true
 }
 
+func chatMotionEvent(view *gtk.TextView, ev *gdk.Event) bool {
+	fmt.Printf("%T %v %T %v\n", view, view, ev, ev)
+
+	//win := view.GetWindow(gtk.TEXT_WINDOW_TEXT)
+	//win.SetCursor(nil)
+
+	return false
+}
+
 func chatWindow() {
 	gtk.Init(nil)
+
+	var err error
+	display, err = gdk.DisplayGetDefault()
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	win, err := gtk.WindowNew(gtk.WINDOW_TOPLEVEL)
 	if err != nil {
 		log.Panic(err)
 	}
+
+	winMain = win
 
 	win.SetTitle(*peerName)
 	win.Connect("destroy", func() {
@@ -439,6 +475,20 @@ func chatWindow() {
 
 	tagURL = chatBuffer.CreateTag("", tagAttrs{"foreground": "#88F"})
 	tagURL.Connect("event", urlEvent)
+
+	chat.Connect("motion-notify-event", chatMotionEvent)
+
+	cursorPointer, err = gdk.CursorNewFromName(display, "pointer")
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("cursorPointer: %+v\n", *cursorPointer)
+
+	cursorText, err = gdk.CursorNewFromName(display, "text")
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("cursorText: %+v\n", *cursorText)
 
 	entry, err = gtk.EntryNew()
 	if err != nil {
