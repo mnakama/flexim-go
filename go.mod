@@ -4,6 +4,7 @@ go 1.19
 
 require (
 	github.com/adrg/xdg v0.4.0
+	github.com/emersion/go-sasl v0.0.0-20220912192320-0145f2c60ead
 	github.com/gen2brain/beeep v0.0.0-20220909211152-5a9ec94374f6
 	github.com/gorilla/websocket v1.5.0
 	github.com/gotk3/gotk3 v0.6.2-0.20211227203914-9ce84f11b1a9

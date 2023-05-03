@@ -8,9 +8,11 @@ package main
 import (
 	"bufio"
 	"crypto/tls"
+	"encoding/base64"
 	"flag"
 	"fmt"
 	"github.com/adrg/xdg"
+	"github.com/emersion/go-sasl"
 	"github.com/gen2brain/beeep"
 	"github.com/mnakama/flexim-go/proto"
 	"gopkg.in/yaml.v2"
@@ -30,6 +32,11 @@ type Channel struct {
 	endOfNames bool
 }
 
+type ConfigSASL struct {
+	Username string
+	Password string
+}
+
 // User config variables
 var config struct {
 	UseTLS         bool
@@ -42,6 +49,7 @@ var config struct {
 	ServerPassword string
 	AutoJoin       []string
 	AutoRun        []string
+	SASL           ConfigSASL
 }
 
 var (
@@ -110,7 +118,11 @@ func login() (err error) {
 	}
 
 	//sendIRCCmd("CAP LS 302")
-	sendIRCCmd("CAP REQ :server-time")
+	capReq := "server-time"
+	if config.SASL.Username != "" {
+		capReq += " sasl"
+	}
+	sendIRCCmd(fmt.Sprintf("CAP REQ :%s", capReq))
 
 	if config.ServerPassword != "" {
 		// don't echo the password
@@ -119,6 +131,21 @@ func login() (err error) {
 	}
 	sendIRCCmd(fmt.Sprintf("NICK %s", config.Nickname))
 	sendIRCCmd(fmt.Sprintf("USER %s 0 * :%s", config.Username, config.Realname))
+
+	if config.SASL.Username != "" {
+		sendIRCCmd("AUTHENTICATE PLAIN")
+		auth := sasl.NewPlainClient("", config.SASL.Username, config.SASL.Password)
+
+		var ir []byte
+		_, ir, err = auth.Start()
+		if err != nil {
+			return
+		}
+
+		b64 := base64.StdEncoding.EncodeToString(ir)
+		fmt.Printf("AUTHENTICATE base64(%s ********)\n", config.SASL.Username)
+		fmt.Fprintf(irc, "AUTHENTICATE %s\r\n", b64)
+	}
 
 	sendIRCCmd("CAP END")
 
@@ -804,8 +831,6 @@ func loadConfig() {
 			log.Print(err)
 		}
 	}
-
-	fmt.Println(config)
 }
 
 func main() {
