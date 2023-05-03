@@ -1,0 +1,17 @@
+== Flexim, the flexible instant messanger
+
+Welcome! This is flexim-go, a flexible, modular, bridgeable messenger that follows the unix philosophy of "do one thing and do it well". It's a set of programs that work together, actually.
+
+.Program list
+[options="header,footer"]
+|=======================
+|Name            |Description
+|flexim-chat     |The chat window. Knows only the flexim protocols and communicates directly with other flexim chats over the network, or over localhost with flexim bridges. One process per window.
+|flexim-client   |Connects to a flexim server. One process per server.
+|flexim-listener |Listens and accepts chats directly from other flexim clients
+|irc-client      |Bridges flexim to IRC networks. One process per IRC server.
+|=======================
+
+.Screenshot of flexim-chat showing an IRC room
+[caption=""]
+image::/screenshot/irc.png[flexim-irc,width=1060,align=center]

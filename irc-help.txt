@@ -1,0 +1,38 @@
+Gnuman!~gnuman@user/gnuman joined the channel
+18:34 #ergo Topic: Ergo IRCd - a modern IRC server written in Go - get the newest release here: https://github.com/ergochat/ergo/releaseshttps://irc.ergo.chat
+18:34 #ergo Topic set by dan- on 2021/07/07 07:41 EDT
+18:34 #ergo People in this channel: 44
+18:36 Gnuman Hello, I'm having trouble with multi-client with default config. According to the docs, if my client doesn't support SASL, I can just use `PASS mynick@clientid:password`, but it's telling me that my nickname is already in use: https://gist.github.com/mnakama/61af3c7e1c6ac615ce7ab3ae07f6a395
+18:36 ErgoBridge <E​rgoBot> gist:61af3c7e1c6ac615ce7ab3ae07f6a395 · GitHub
+18:38 Gnuman somehow, thelounge.chat is able to login with the PASS method, but I don't know what it's doing differently. I've tried doing `PASS :mypassword`. I tried `PASS :gnuman_test:password`. I tried `PASS mypassword`. I even tried the wrong password, and I don't get any error messages
+18:38 Gnuman I mean I get the same exact response from the server whether I put a valid or an invalid password
+18:41 Gnuman this is using ergo 2.11.0 on NixOS
+18:55 ErgoBridge <s​lingamn> Gnuman: i have to go out, i'll take a look in a couple hours
+18:56 Gnuman ah, thanks slingamn =)
+19:52 lead.libera.chat @time=2023-04-25T23:52:21.979Z :lead.libera.chat 731 * :LogicAside
+19:52 lead.libera.chat @time=2023-04-25T23:52:22.167Z :lead.libera.chat 730 * :LogicAside!~logicasid@user/logicaside
+20:51 ErgoBridge <s​lingamn> Gnuman: what client is this btw?
+20:51 Gnuman It's a custom client I'm building: https://github.com/mnakama/flexim-go/blob/master/irc-client.go
+20:51 ErgoBridge <E​rgoBot> flexim-go/irc-client.go at master · mnakama/flexim-go · GitHub
+20:52 Gnuman I'm just puzzling over what the proper PASS authentication is for multi-client. The docs I referred to are here: https://github.com/ergochat/ergo/blob/stable/docs/USERGUIDE.md#account-registration
+20:52 ErgoBridge <E​rgoBot> ergo/USERGUIDE.md at stable · ergochat/ergo · GitHub
+20:53 ErgoBridge <s​lingamn> the thing you're doing in the transcript looks correct to me
+20:53 ErgoBridge <s​lingamn> it's PASS account@clientid:password
+20:53 Gnuman now, my PASS authentication works for ZNC and etc., but I'm not even getting a response from ergochat
+20:53 ErgoBridge <s​lingamn> are you sure you entered the password correctly?
+20:53 ErgoBridge <s​lingamn> also yeah we don't send a response for an incorrect password
+20:53 Gnuman hmm...... maybe it's the wrong password, then
+20:54 Gnuman I wonder why it's working for thelounge when I don't even put the account@clientid part, just password
+20:54 ErgoBridge <s​lingamn> TL supports SASL
+20:54 ErgoBridge <s​lingamn> so it's probably just doing SASL...you could look at the raw log to confirm
+20:54 Gnuman yeah, but I didn't enable SASL, just PASS (testing with non-TLS ergochat setup)
+20:55 ErgoBridge <s​lingamn> if you try to send an account password with PASS and no account: prefix, it will not work
+20:55 ErgoBridge <s​lingamn> but yeah if you want to confirm what's actually happening, you need the raw log, either from TL's side or the ergo side
+20:56 ErgoBridge <s​lingamn> jfyi i would recommend upgrading to https://github.com/ergochat/ergo/releases/tag/v2.11.1 but it's not urgent and it won't affect the issue you're currently having
+20:56 ErgoBridge <E​rgoBot> Release v2.11.1 · ergochat/ergo · GitHub
+20:57 Gnuman ok, how do I configure ergo to log the raw?
+21:02 ErgoBridge <s​lingamn> find the logging section of your config
+21:03 ErgoBridge <s​lingamn> change "type" to "*" and "level" to "debug"
+21:03 ErgoBridge <s​lingamn> but be warned that this will log all traffic, including passwords
+21:40 Gnuman thanks slingamn. apologies for going quiet. had a late-night zoom
+21:44 ErgoBridge <s​lingamn> np
